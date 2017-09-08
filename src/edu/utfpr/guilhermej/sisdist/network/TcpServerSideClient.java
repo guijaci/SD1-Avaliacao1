@@ -1,11 +1,13 @@
 package edu.utfpr.guilhermej.sisdist.network;
 
-import edu.utfpr.guilhermej.sisdist.listener.MessageEventListener;
+import edu.utfpr.guilhermej.sisdist.listener.NetMessageEventListener;
 
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.net.InetAddress;
 import java.net.Socket;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Scanner;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -15,7 +17,7 @@ public class TcpServerSideClient {
     private Socket clientSocket;
     private BlockingQueue<String> sendMessageQueue;
 
-    private ArrayList<MessageEventListener> messageListeners;
+    private List<NetMessageEventListener> messageListeners;
 
     private boolean executionEnable;
 
@@ -50,11 +52,11 @@ public class TcpServerSideClient {
         sendMessageQueue.add(message);
     }
 
-    public void addMessageReceivedListener(MessageEventListener listener){
+    public void addMessageReceivedListener(NetMessageEventListener listener){
         messageListeners.add(listener);
     }
 
-    public void removeMessageReceivedListener(MessageEventListener listener){
+    public void removeMessageReceivedListener(NetMessageEventListener listener){
         messageListeners.remove(listener);
     }
 
@@ -65,7 +67,8 @@ public class TcpServerSideClient {
                 while (executionEnable) {
                     if(clientSocket.isConnected() && !clientSocket.isClosed() ) {
                         if(in.hasNextLine())
-                            messageReceivedEvent(in.nextLine());
+                            messageReceivedEvent(in.nextLine(),
+                                    InetAddress.getByName(clientSocket.getRemoteSocketAddress().toString()));
                         Thread.yield();
                     }
                 }
@@ -102,7 +105,7 @@ public class TcpServerSideClient {
         connection.start();
     }
 
-    private void messageReceivedEvent(String message){
-        messageListeners.forEach(listener -> listener.onMessageReceived(message));
+    private void messageReceivedEvent(String message, InetAddress address){
+        messageListeners.forEach(listener -> listener.onNetMessageReceived(message, address));
     }
 }

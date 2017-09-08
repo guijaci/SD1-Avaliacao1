@@ -1,10 +1,11 @@
 package edu.utfpr.guilhermej.sisdist.network;
 
-import edu.utfpr.guilhermej.sisdist.listener.MessageEventListener;
+import edu.utfpr.guilhermej.sisdist.listener.NetMessageEventListener;
 
 import java.io.*;
 import java.net.*;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
@@ -14,20 +15,23 @@ public class MulticastPeer {
     private static final int TIMEOUT = 20;
 
     private final BlockingQueue<String> sendMessageQueue;
+    private final BlockingQueue<NetAddressedMessage> receiveMessageQueue;
     private MulticastSocket s = null;
     private InetAddress group = null;
-    private ArrayList<MessageEventListener> messageListeners = new ArrayList<>();
+    private List<NetMessageEventListener> messageListeners = new ArrayList<>();
 
     private boolean executionEnable = false;
 
     public MulticastPeer(String ip){
         sendMessageQueue = new LinkedBlockingQueue<>();
+        receiveMessageQueue = new LinkedBlockingQueue<>();
         executionEnable = true;
 
         try{
             initMulticastSocket(ip);
             initSendMessageThread();
             initReceiveMessageThread();
+            initPropagateMessageThread();
         }catch (SocketException e){
             System.out.println("Socket: " + e.getMessage());
             if(s != null) s.close();
@@ -47,11 +51,11 @@ public class MulticastPeer {
         }
     }
 
-    public void addMessageListener(MessageEventListener messageListener){
+    public void addMessageListener(NetMessageEventListener messageListener){
         messageListeners.add(messageListener);
     }
 
-    public void removeMessageListener(MessageEventListener messageListener){
+    public void removeMessageListener(NetMessageEventListener messageListener){
         messageListeners.remove(messageListener);
     }
 
@@ -59,8 +63,8 @@ public class MulticastPeer {
         executionEnable = false;
     }
 
-    private void messageReceivedEvent(String message){
-        messageListeners.forEach(messageListener -> messageListener.onMessageReceived(message));
+    private void messageReceivedEvent(String message, InetAddress addresss){
+        messageListeners.forEach(messageListener -> messageListener.onNetMessageReceived(message, addresss));
     }
 
     private void initMulticastSocket(String ip) throws IOException{
@@ -85,8 +89,9 @@ public class MulticastPeer {
                     }
                     msg = new String(messageIn.getData()).trim();
                     System.out.println("Received:" + msg);
-                    //TODO: Utilizar thread consumidora para nao travar recepção de mensagens
-                    messageReceivedEvent(msg);
+                    receiveMessageQueue.add(new NetAddressedMessage()
+                            .setMessage(msg)
+                            .setSenderAddress(messageIn.getAddress()));
                     for (int i = 0; i < msg.length(); i++)
                         buffer[i] = 0;
                     messageIn = new DatagramPacket(buffer, buffer.length);
@@ -130,5 +135,52 @@ public class MulticastPeer {
         });
         sendMessageThread.setName("Send Message Thread");
         sendMessageThread.start();
+    }
+
+    private void initPropagateMessageThread(){
+        Thread propagateMessage = new Thread(()->{
+            while(executionEnable){
+                if(receiveMessageQueue.isEmpty()) {
+                    Thread.yield();
+                    continue;
+                }
+                try {
+                    NetAddressedMessage addressedMessage = receiveMessageQueue.take();
+                    netMessageReceivedEvent(addressedMessage.getMessage(), addressedMessage.getSenderAddress());
+                } catch (InterruptedException e) {
+                    System.out.println("Interrupted: " + e.getMessage());
+                }
+                Thread.yield();
+            }
+        });
+        propagateMessage.setName("Propagate Message Thread");
+        propagateMessage.start();
+    }
+
+    private void netMessageReceivedEvent(String message, InetAddress address){
+        messageListeners.forEach(listener->listener.onNetMessageReceived(message, address));
+    }
+
+    private class NetAddressedMessage{
+        private String message;
+        private InetAddress senderAddress;
+
+        public String getMessage() {
+            return message;
+        }
+
+        public NetAddressedMessage setMessage(String message) {
+            this.message = message;
+            return this;
+        }
+
+        public InetAddress getSenderAddress() {
+            return senderAddress;
+        }
+
+        public NetAddressedMessage setSenderAddress(InetAddress senderAddress) {
+            this.senderAddress = senderAddress;
+            return this;
+        }
     }
 }

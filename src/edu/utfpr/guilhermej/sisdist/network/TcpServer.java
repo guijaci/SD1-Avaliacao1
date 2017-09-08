@@ -3,8 +3,10 @@ package edu.utfpr.guilhermej.sisdist.network;
 import edu.utfpr.guilhermej.sisdist.listener.TcpSynchroConnectionEventListener;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 
 public class TcpServer {
@@ -38,6 +40,10 @@ public class TcpServer {
 
     public void removeTcpConnectionListener(TcpSynchroConnectionEventListener connectionListener){
         connectionListeners.remove(connectionListener);
+    }
+
+    public InetAddress getIpAddress() throws UnknownHostException {
+        return InetAddress.getLocalHost();
     }
 
     private void initReconectionThread() {

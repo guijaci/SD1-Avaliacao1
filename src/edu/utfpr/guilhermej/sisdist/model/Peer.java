@@ -1,11 +1,13 @@
 package edu.utfpr.guilhermej.sisdist.model;
 
 import edu.utfpr.guilhermej.sisdist.listener.MessageEventListener;
+import edu.utfpr.guilhermej.sisdist.listener.NetMessageEventListener;
 import edu.utfpr.guilhermej.sisdist.network.MulticastPeer;
 import edu.utfpr.guilhermej.sisdist.network.TcpServer;
 import edu.utfpr.guilhermej.sisdist.network.TcpSynchroServerSideClient;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.SocketException;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -20,15 +22,17 @@ public class Peer {
     //IP multicast
     private final String MULTICAST_IP_ADD = "233.32.31.30";
     //Intervalo de tempo em que um indexador envia mensagens
-    private final int DELTA = 5000;
+    private final int DELTA = 2500;
 
     private UUID uuid;
     private KeyPair keyPair;
     private MulticastPeer multicastPeer;
     private TcpServer tcpServer;
 
-    private PeerOpponent currentIndexer;
+    private PeerOpponent lastActiveIndexer;
     private Map<UUID, PeerOpponent> peerMap = new HashMap<>();
+
+    private List<MessageEventListener> messageListeners;
 
     private int tcpPort;
     private boolean executionEnable = false;
@@ -36,6 +40,8 @@ public class Peer {
     private boolean indexing = false;
 
     public Peer(){
+        messageListeners = new ArrayList<>();
+
         uuid = UUID.randomUUID();
         keyPair = buildKeyPair(KEY_LENGTH, ENCRYPTION_ALGORITHM);
         multicastPeer = new MulticastPeer(MULTICAST_IP_ADD);
@@ -49,17 +55,17 @@ public class Peer {
         }
         tcpServer.addTcpConnectionListener(this::onTcpClientConnect);
 
-        PeerOpponent self = new PeerOpponent();
-        self.setPortTcp(tcpPort);
-        self.setUuid(uuid);
-        peerMap.put(uuid, self);
+        peerMap.put(uuid,
+                new PeerOpponent()
+                .setPortTcp(tcpPort)
+                .setUuid(uuid));
 
         executionEnable = true;
         initPeerThread();
     }
 
     public void disconnect() {
-        sendMulticastMessage(String.format("LEAVING/%s", uuid.toString()));
+        multicastLeavingMessage();
         executionEnable = false;
         tcpServer.disconnect();
         multicastPeer.disconect();
@@ -69,37 +75,48 @@ public class Peer {
         multicastPeer.sendMessage(message);
     }
 
-    public void processMulticastMessage(String message){
+    public void processMulticastMessage(String message, InetAddress address){
         String msgTokens[] = message.split("/");
         UUID senderUuid = UUID.fromString(msgTokens[1]);
         if(uuid.equals(senderUuid)) return;
         switch (msgTokens[0]){
             case "GREETING":
-                sendMulticastMessage(String.format("INVITE/%s/%s/%d",uuid.toString(), senderUuid.toString(), tcpPort));
+                multicastInviteMessage(senderUuid);
                 if(!peerMap.containsKey(senderUuid)){
-                    PeerOpponent peerOpponent = new PeerOpponent();
-                    peerOpponent.setUuid(senderUuid);
-                    peerOpponent.setPortTcp(Integer.parseInt(msgTokens[2]));
-                    peerMapPut(senderUuid, peerOpponent);
+                    peerMapPut(senderUuid,
+                            new PeerOpponent()
+                            .setUuid(senderUuid)
+                            .setIpAddress(address)
+                            .setPortTcp(Integer.parseInt(msgTokens[2])));
                 }
                 break;
             case "INDEXING":
                 setIndexerUp(true);
                 setIndexing(false);
                 if(!peerMap.containsKey(senderUuid)) {
-                    PeerOpponent peerOpponent = new PeerOpponent();
-                    peerOpponent.setUuid(senderUuid);
-                    peerOpponent.setPortTcp(Integer.parseInt(msgTokens[2]));
-                    peerMapPut(senderUuid, peerOpponent);
+                    peerMapPut(senderUuid,
+                            new PeerOpponent()
+                            .setUuid(senderUuid)
+                            .setIpAddress(address)
+                            .setPortTcp(Integer.parseInt(msgTokens[2])));
                 }
+                if(lastActiveIndexer != null) {
+                    if(!senderUuid.equals(lastActiveIndexer.getUuid())) {
+                        lastActiveIndexer = peerMap.get(senderUuid);
+                        sendPublicKey(lastActiveIndexer);
+                    }
+                }
+                else
+                    lastActiveIndexer = peerMap.get(senderUuid);
                 break;
             case "INVITE":
                 UUID invited = UUID.fromString(msgTokens[2]);
                 if(uuid.equals(invited) && !peerMap.containsKey(senderUuid)) {
-                    PeerOpponent peerOpponent = new PeerOpponent();
-                    peerOpponent.setPortTcp(Integer.parseInt(msgTokens[3]));
-                    peerOpponent.setUuid(senderUuid);
-                    peerMapPut(senderUuid, peerOpponent);
+                    peerMapPut(senderUuid,
+                            new PeerOpponent()
+                            .setIpAddress(address)
+                            .setPortTcp(Integer.parseInt(msgTokens[3]))
+                            .setUuid(senderUuid));
                 }
                 break;
             case "LEAVING":
@@ -108,14 +125,15 @@ public class Peer {
                 break;
             default:
         }
+        messageListeners.forEach(listener->listener.onMessageReceived(message));
     }
 
     public void addMulticastMessageListener(MessageEventListener messageListener){
-        multicastPeer.addMessageListener(messageListener);
+        messageListeners.add(messageListener);
     }
 
-    public void removeMulticatsMesageListener(MessageEventListener messageListener){
-        multicastPeer.removeMessageListener(messageListener);
+    public void removeMulticatsMesageListener(NetMessageEventListener messageListener){
+        messageListeners.remove(messageListener);
     }
 
     @Override
@@ -136,12 +154,12 @@ public class Peer {
 
     private void initPeerThread(){
         Thread peerThread = new Thread(() -> {
-            sendMulticastMessage(String.format("GREETING/%s/%d",uuid.toString(), tcpPort));
+            multicastGreetingMessage();
             delay();
             while(executionEnable){
                 if(peerMap.size() > 3) {
                     if (indexing)
-                        sendMulticastMessage(String.format("INDEXING/%s/%d", uuid.toString(), tcpPort));
+                        multicastIndexingMessage();
                     else {
                         if(indexerUp){
                             setIndexerUp(false);
@@ -152,6 +170,7 @@ public class Peer {
                             peers.sort(Comparator.comparing(PeerOpponent::getUuid));
                             if(uuid.equals(peers.get(0).getUuid())){
                                 setIndexing(true);
+                                lastActiveIndexer = peers.get(0);
                                 continue;
                             }
                             delay(2);
@@ -167,8 +186,28 @@ public class Peer {
                 delay();
             }
         });
-        peerThread.setName("Peer Comunication Thread");
+        peerThread.setName("Peer Sinchronyzation Thread");
         peerThread.start();
+    }
+
+    private void multicastIndexingMessage() {
+        sendMulticastMessage(String.format("INDEXING/%s/%d",
+                uuid.toString(), tcpPort));
+    }
+
+    private void multicastInviteMessage(UUID invited) {
+        sendMulticastMessage(String.format("INVITE/%s/%s/%d",
+                uuid.toString(), invited.toString(), tcpPort));
+    }
+
+    private void multicastGreetingMessage() {
+        sendMulticastMessage(String.format("GREETING/%s/%d",
+                uuid.toString(), tcpPort));
+    }
+
+    private void multicastLeavingMessage() {
+        sendMulticastMessage(String.format("LEAVING/%s",
+                uuid.toString()));
     }
 
     private void onTcpClientConnect(TcpSynchroServerSideClient connection){
@@ -184,6 +223,10 @@ public class Peer {
         } catch (SocketException e) {
             System.out.println("Peer Socket: " + e.getMessage());
         }
+    }
+
+    private void sendPublicKey(PeerOpponent peer){
+
     }
 
     private synchronized void setIndexing(boolean indexing){
