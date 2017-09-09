@@ -1,19 +1,19 @@
-package edu.utfpr.guilhermej.sisdist.model;
+package edu.utfpr.guilhermej.sisdist.av1.model;
 
 import java.net.InetAddress;
+import java.security.Key;
 import java.security.PublicKey;
-import java.util.ArrayList;
-import java.util.UUID;
+import java.util.*;
 import java.util.function.Consumer;
 
 public class PeerOpponent implements Comparable<PeerOpponent>{
     private UUID uuid;
     private InetAddress ipAddress;
     private int portTcp;
-    private PublicKey key;
+    private Key key;
     private boolean hasKey;
 
-    private ArrayList<SaleItem> saleItems;
+    private List<SaleItem> saleItemList;
 
     public UUID getUuid() {
         return uuid;
@@ -42,11 +42,11 @@ public class PeerOpponent implements Comparable<PeerOpponent>{
         return this;
     }
 
-    public PublicKey getKey() {
+    public Key getKey() {
         return key;
     }
 
-    public PeerOpponent setKey(PublicKey key) {
+    public PeerOpponent setKey(Key key) {
         this.key = key;
         return this;
     }
@@ -61,24 +61,24 @@ public class PeerOpponent implements Comparable<PeerOpponent>{
     }
 
     public SaleItem getItem (int index){
-        return saleItems.get(index);
+        return saleItemList.get(index);
     }
 
     public int countItems(){
-        return saleItems.size();
+        return saleItemList.size();
     }
 
     public PeerOpponent addItem(SaleItem item){
-        saleItems.add(item);
+        saleItemList.add(item);
         return this;
     }
 
     public boolean removeItem(SaleItem item){
-        return saleItems.remove(item);
+        return saleItemList.remove(item);
     }
 
     public PeerOpponent foreachItem(Consumer<? super SaleItem> action) {
-        saleItems.forEach(action);
+        saleItemList.forEach(action);
         return this;
     }
 

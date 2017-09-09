@@ -1,14 +1,11 @@
-package edu.utfpr.guilhermej.sisdist.network;
+package edu.utfpr.guilhermej.sisdist.av1.network;
 
-import edu.utfpr.guilhermej.sisdist.listener.NetMessageEventListener;
+import edu.utfpr.guilhermej.sisdist.av1.listener.INetMessageEventListener;
 
-import java.io.IOException;
-import java.io.PrintWriter;
+import java.io.*;
 import java.net.InetAddress;
 import java.net.Socket;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Scanner;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
@@ -17,7 +14,7 @@ public class TcpServerSideClient {
     private Socket clientSocket;
     private BlockingQueue<String> sendMessageQueue;
 
-    private List<NetMessageEventListener> messageListeners;
+    private List<INetMessageEventListener> messageListeners;
 
     private boolean executionEnable;
 
@@ -52,26 +49,31 @@ public class TcpServerSideClient {
         sendMessageQueue.add(message);
     }
 
-    public void addMessageReceivedListener(NetMessageEventListener listener){
+    public void addMessageReceivedListener(INetMessageEventListener listener){
         messageListeners.add(listener);
     }
 
-    public void removeMessageReceivedListener(NetMessageEventListener listener){
+    public void removeMessageReceivedListener(INetMessageEventListener listener){
         messageListeners.remove(listener);
     }
 
     private void initConnectionReceiveMessageThread() {
         Thread connection = new Thread(() -> {
             try {
-                Scanner in = new Scanner(clientSocket.getInputStream());
+                DataInputStream in = new DataInputStream(clientSocket.getInputStream());
                 while (executionEnable) {
                     if(clientSocket.isConnected() && !clientSocket.isClosed() ) {
-                        if(in.hasNextLine())
-                            messageReceivedEvent(in.nextLine(),
-                                    InetAddress.getByName(clientSocket.getRemoteSocketAddress().toString()));
+                        String msg = in.readUTF();
+                        if(msg == null) {
+                            Thread.yield();
+                            continue;
+                        }
+                        messageReceivedEvent(in.readUTF(),
+                                InetAddress.getByName(clientSocket.getRemoteSocketAddress().toString()));
                         Thread.yield();
                     }
                 }
+                in.close();
                 if(clientSocket != null && !clientSocket.isClosed())
                     clientSocket.close();
             }catch(IOException e){
@@ -85,14 +87,16 @@ public class TcpServerSideClient {
     private void initConnectionSendMessageThread(){
         Thread connection =  new Thread(()->{
             try{
-                PrintWriter out = new PrintWriter(clientSocket.getOutputStream());
+                DataOutputStream out = new DataOutputStream(clientSocket.getOutputStream());
                 while(executionEnable){
                     if(clientSocket.isConnected() && !clientSocket.isClosed()){
-                        if(!sendMessageQueue.isEmpty())
-                            out.println(sendMessageQueue.take());
+                        if(!sendMessageQueue.isEmpty()) {
+                            out.writeUTF(sendMessageQueue.take());
+                        }
                         Thread.yield();
                     }
                 }
+                out.close();
                 if(clientSocket != null && !clientSocket.isClosed())
                     clientSocket.close();
             }catch (IOException e){

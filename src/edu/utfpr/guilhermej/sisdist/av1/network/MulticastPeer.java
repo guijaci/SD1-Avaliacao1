@@ -1,6 +1,6 @@
-package edu.utfpr.guilhermej.sisdist.network;
+package edu.utfpr.guilhermej.sisdist.av1.network;
 
-import edu.utfpr.guilhermej.sisdist.listener.NetMessageEventListener;
+import edu.utfpr.guilhermej.sisdist.av1.listener.INetMessageEventListener;
 
 import java.io.*;
 import java.net.*;
@@ -18,7 +18,7 @@ public class MulticastPeer {
     private final BlockingQueue<NetAddressedMessage> receiveMessageQueue;
     private MulticastSocket s = null;
     private InetAddress group = null;
-    private List<NetMessageEventListener> messageListeners = new ArrayList<>();
+    private List<INetMessageEventListener> messageListeners = new ArrayList<>();
 
     private boolean executionEnable = false;
 
@@ -51,11 +51,11 @@ public class MulticastPeer {
         }
     }
 
-    public void addMessageListener(NetMessageEventListener messageListener){
+    public void addMessageListener(INetMessageEventListener messageListener){
         messageListeners.add(messageListener);
     }
 
-    public void removeMessageListener(NetMessageEventListener messageListener){
+    public void removeMessageListener(INetMessageEventListener messageListener){
         messageListeners.remove(messageListener);
     }
 
@@ -88,7 +88,7 @@ public class MulticastPeer {
                         continue;
                     }
                     msg = new String(messageIn.getData()).trim();
-                    System.out.println("Received:" + msg);
+                    System.out.println("Multicast: " + msg);
                     receiveMessageQueue.add(new NetAddressedMessage()
                             .setMessage(msg)
                             .setSenderAddress(messageIn.getAddress()));

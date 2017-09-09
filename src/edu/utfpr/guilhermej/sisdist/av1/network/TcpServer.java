@@ -1,6 +1,6 @@
-package edu.utfpr.guilhermej.sisdist.network;
+package edu.utfpr.guilhermej.sisdist.av1.network;
 
-import edu.utfpr.guilhermej.sisdist.listener.TcpSynchroConnectionEventListener;
+import edu.utfpr.guilhermej.sisdist.av1.listener.ITcpSynchroConnectionEventListener;
 
 import java.io.IOException;
 import java.net.InetAddress;
@@ -10,11 +10,11 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 
 public class TcpServer {
-    private final int TIMEOUT = 200;
+    private final int TIMEOUT = 3000;
 
     ServerSocket listenSocket;
 
-    private ArrayList<TcpSynchroConnectionEventListener> connectionListeners;
+    private ArrayList<ITcpSynchroConnectionEventListener> connectionListeners;
     private ArrayList<TcpServerSideClient> clientConnections;
     private int port;
     private boolean executionEnable = false;
@@ -25,20 +25,26 @@ public class TcpServer {
         clientConnections = new ArrayList<>();
         connectionListeners = new ArrayList<>();
         executionEnable = true;
-        listenSocket.setSoTimeout(200);
+//        listenSocket.setSoTimeout(TIMEOUT);
         initReconectionThread();
     }
 
     public void disconnect(){
         executionEnable = false;
         clientConnections.forEach(TcpServerSideClient::disconnect);
+        try{
+            if(listenSocket != null && !listenSocket.isClosed())
+                listenSocket.close();
+        } catch (IOException e) {
+                System.out.println("Server IO: " + e.getMessage());
+        }
     }
 
-    public void addTcpConnectionListener(TcpSynchroConnectionEventListener connectionListener){
+    public void addTcpConnectionListener(ITcpSynchroConnectionEventListener connectionListener){
         connectionListeners.add(connectionListener);
     }
 
-    public void removeTcpConnectionListener(TcpSynchroConnectionEventListener connectionListener){
+    public void removeTcpConnectionListener(ITcpSynchroConnectionEventListener connectionListener){
         connectionListeners.remove(connectionListener);
     }
 

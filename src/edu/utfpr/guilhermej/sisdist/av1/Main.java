@@ -1,7 +1,7 @@
-package edu.utfpr.guilhermej.sisdist;
+package edu.utfpr.guilhermej.sisdist.av1;
 
-import edu.utfpr.guilhermej.sisdist.controller.PeerWindowController;
-import edu.utfpr.guilhermej.sisdist.model.Peer;
+import edu.utfpr.guilhermej.sisdist.av1.controller.PeerWindowController;
+import edu.utfpr.guilhermej.sisdist.av1.model.Peer;
 import javafx.application.Application;
 import javafx.event.EventHandler;
 import javafx.fxml.FXMLLoader;
@@ -10,10 +10,14 @@ import javafx.scene.Scene;
 import javafx.stage.Stage;
 import javafx.stage.WindowEvent;
 
+import java.util.Locale;
+
 public class Main extends Application {
 
     @Override
     public void start(Stage primaryStage) throws Exception{
+        Locale.setDefault(new Locale("en", "US"));
+
         FXMLLoader loader = new FXMLLoader(getClass().getResource("view/peerWindow.fxml"));
         Parent root = loader.load();
 
