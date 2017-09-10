@@ -8,24 +8,22 @@
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.RowConstraints?>
 
-<GridPane fx:id="gridPane" hgap="10" vgap="10" xmlns="http://javafx.com/javafx/8.0.121" xmlns:fx="http://javafx.com/fxml/1" fx:controller="edu.utfpr.guilhermej.sisdist.av1.controller.PeerWindowController">
+<GridPane fx:id="gridPane" alignment="CENTER" hgap="10" vgap="10" xmlns="http://javafx.com/javafx/8.0.121" xmlns:fx="http://javafx.com/fxml/1" fx:controller="edu.utfpr.guilhermej.sisdist.av1.controller.PeerWindowController">
    <children>
-      <TextArea fx:id="textAreaInput" prefHeight="200.0" prefWidth="200.0" GridPane.columnIndex="0" GridPane.rowIndex="0" />
+      <TextArea fx:id="textAreaOutput" editable="false" prefHeight="380.0" prefWidth="780.0" />
       <HBox alignment="CENTER" fillHeight="false" GridPane.halignment="CENTER" GridPane.rowIndex="1" GridPane.valignment="CENTER">
          <children>
-            <Button fx:id="buttonSend" mnemonicParsing="false" onAction="#buttonClicked" text="Send">
+            <Button fx:id="newSaleItemButton" mnemonicParsing="false" onAction="#onCreateSaleItem" text="New Item">
                <HBox.margin>
                   <Insets bottom="5.0" left="5.0" right="5.0" top="5.0" />
                </HBox.margin>
             </Button>
-            <Button fx:id="newSaleItemButton" mnemonicParsing="false" onAction="#createSaleItem" text="New Item">
+            <Button fx:id="searchItemButton" disable="true" mnemonicParsing="false" onAction="#onSearchItem" text="Search Item">
                <HBox.margin>
                   <Insets bottom="5.0" left="5.0" right="5.0" top="5.0" />
-               </HBox.margin>
-            </Button>
+               </HBox.margin></Button>
          </children>
       </HBox>
-      <TextArea fx:id="textAreaOutput" disable="true" editable="false" prefHeight="200.0" prefWidth="200.0" GridPane.columnIndex="1" GridPane.rowIndex="0" />
    </children>
    <columnConstraints>
       <ColumnConstraints />

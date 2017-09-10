@@ -1,16 +1,15 @@
 package edu.utfpr.guilhermej.sisdist.av1.model;
 
 public class SaleItem implements Comparable<SaleItem> {
-    private String itemName;
+    private String description;
     private float price;
-    private int quantity;
 
-    public String getItemName() {
-        return itemName;
+    public String getDescription() {
+        return description;
     }
 
-    public SaleItem setItemName(String itemName) {
-        this.itemName = itemName;
+    public SaleItem setDescription(String description) {
+        this.description = description;
         return this;
     }
 
@@ -22,26 +21,16 @@ public class SaleItem implements Comparable<SaleItem> {
         this.price = price;
         return this;
     }
-
-    public int getQuantity() {
-        return quantity;
-    }
-
-    public SaleItem setQuantity(int quantity) {
-        this.quantity = quantity;
-        return this;
-    }
-
     @Override
     public boolean equals(Object obj) {
         if(!SaleItem.class.isInstance(obj))
             return false;
         SaleItem item = SaleItem.class.cast(obj);
-        return getItemName().equals(itemName);
+        return getDescription().equals(description);
     }
 
     @Override
     public int compareTo(SaleItem o) {
-        return getItemName().compareTo(o.getItemName());
+        return getDescription().compareTo(o.getDescription());
     }
 }

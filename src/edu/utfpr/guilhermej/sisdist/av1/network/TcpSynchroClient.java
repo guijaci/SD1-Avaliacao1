@@ -6,17 +6,12 @@ import java.net.Socket;
 import java.net.SocketException;
 
 public class TcpSynchroClient implements ISocketConnection {
-    private int serverPort;
-    private InetAddress serverAddress;
     private Socket clientSide;
 
     private final DataOutputStream out;
     private final DataInputStream in;
 
     public TcpSynchroClient(InetAddress serverAddress, int serverPort) throws IOException {
-        this.serverPort = serverPort;
-        this.serverAddress = serverAddress;
-
         clientSide = new Socket(serverAddress, serverPort);
 
         out = new DataOutputStream(clientSide.getOutputStream());
