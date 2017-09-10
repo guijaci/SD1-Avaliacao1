@@ -30,6 +30,7 @@ public class Peer {
     private static final String MULTICAST_IP_ADD = "233.32.31.30";
     //Intervalo de tempo em que um indexador envia mensagens
     private static final int DELTA = 2500;
+    public static final float INITIAL_MONEY = 1000f;
 
     private UUID uuid;
     private KeyPair keyPair;
@@ -38,11 +39,12 @@ public class Peer {
 
     private PeerOpponent lastActiveIndexer;
     private final Map<UUID, PeerOpponent> peerMap;
-    private List<SaleItem> saleItemList;
+    private final List<SaleItem> saleItemList;
 
     private List<IMessageEventListener> messageEventListeners;
     private List<ITriggerEventListener> indexerConnectionEventListeners;
 
+    private float money = INITIAL_MONEY;
     private int tcpPort;
     private boolean executionEnable = false;
     private boolean indexerClockFlag = false;
@@ -76,7 +78,8 @@ public class Peer {
         peerMap.put(uuid,
                 new PeerOpponent()
                 .setPortTcp(tcpPort)
-                .setUuid(uuid));
+                .setUuid(uuid)
+                .setKey(keyPair.getPublic()));
 
         executionEnable = true;
         initIndexerControllThread();
@@ -91,7 +94,9 @@ public class Peer {
     }
 
     public void addSaleItem(SaleItem item){
-        saleItemList.add(item);
+        synchronized (saleItemList) {
+            saleItemList.add(item);
+        }
         if(!indexing) {
             if (indexerUp)
                 sendAddSaleItem(item, lastActiveIndexer);
@@ -109,8 +114,13 @@ public class Peer {
         if(!indexing){
             sendSearchItemByDescription(description, lastActiveIndexer);
         }
-        //TODO: quando o indexador quer procurar
-        //else
+        else{
+            Pair<PeerOpponent, SaleItem> pair = getPeerBySaleItemDescription(uuid, description);
+            if(pair != null)
+                sendBuyItem(pair.getRight(), pair.getLeft());
+            //TODO: caso nao encontre nenhum item
+            //else ...
+        }
 
     }
 
@@ -168,7 +178,9 @@ public class Peer {
         else {
             synchronized (peerMap) {
                 PeerOpponent indexerInMap = peerMap.get(indexerUuid);
-                saleItemList.forEach(indexerInMap::addItem);
+                synchronized (saleItemList) {
+                    saleItemList.forEach(indexerInMap::addItem);
+                }
             }
         }
     }
@@ -241,8 +253,10 @@ public class Peer {
                     connection.setTimeout(TCP_TIMEOUT);
                     String publicKey = keyToHex(keyPair.getPublic());
                     tcpIntroduceMessage(connection, null);
-                    for(SaleItem item: itemList)
-                        tcpAddMessage(connection, null, item);
+                    synchronized (itemList) {
+                        for (SaleItem item : itemList)
+                            tcpAddMessage(connection, null, item);
+                    }
                     tcpFinishMessage(connection, null);
                     String response = connection.getMessage();
                     if(processTcpMessage(response, connection, peer.getUuid(), null))
@@ -315,15 +329,15 @@ public class Peer {
     private void sendBuyItem(SaleItem item, PeerOpponent peer){
         Thread sendBuyItem = new Thread(()-> {
             TcpSynchroClient connection = null;
-            for(int i = 0; i < RECONNECTION_TRIES; i++) {
                 try {
                     connection = new TcpSynchroClient(peer.getIpAddress(), peer.getPortTcp());
                     connection.setTimeout(TCP_TIMEOUT);
+                    tcpIntroduceMessage(connection, peer.getKey());
                     tcpBuyMessage(connection, peer.getKey(), item);
                     tcpFinishMessage(connection, peer.getKey());
                     String response = connection.getMessage();
                     if(processTcpMessage(response, connection, peer.getUuid(), null))
-                        break;
+                        money -= item.getPrice();
                 } catch (IOException e) {
                     System.out.println("Peer IO: " + e.getMessage());
                 } finally {
@@ -331,7 +345,7 @@ public class Peer {
                         connection.disconnect();
                     delay();
                 }
-            }
+
         });
         sendBuyItem.setName("TCP Client Send Search Item by Description");
         sendBuyItem.start();
@@ -505,13 +519,28 @@ public class Peer {
                             "Process have not announced itself", 30);
                 break;
             case "BUY":
+                SaleItem wanted = new SaleItem()
+                        .setDescription(msgTokens[1])
+                        .setPrice(Float.parseFloat(msgTokens[2]));
+                synchronized (saleItemList){
+                    Optional<SaleItem> optional = saleItemList
+                            .stream()
+                            .filter(item -> item.getDescription().equals(wanted.getDescription()) &&
+                                    Float.valueOf(item.getPrice()).equals(wanted.getPrice()))
+                            .findFirst();
+                    if(optional.isPresent()) {
+                        optional.ifPresent(saleItemList::remove);
+                        money += wanted.getPrice();
+                    }
+                    else
+                        tcpErrorMessage(connection, encryptionKey, "Transaction refused", 60);
+                }
                 break;
             case "ENCRYPTED":
                 try {
                     Cipher cipher = Cipher.getInstance(ASSYMETRIC_ALGORITHM);
                     cipher.init(Cipher.DECRYPT_MODE, keyPair.getPrivate());
                     String decrypted = new String(cipher.doFinal(DatatypeConverter.parseHexBinary(msgTokens[1])), StandardCharsets.UTF_8);
-                    onMessageEventAsync("TCP: " + decrypted);
                     processTcpMessage(decrypted, connection, senderUuid, encryptionKey);
                 } catch (NoSuchAlgorithmException | NoSuchPaddingException | InvalidKeyException | BadPaddingException | IllegalBlockSizeException e) {
                     e.printStackTrace();
@@ -595,7 +624,7 @@ public class Peer {
                                 "Process is not indexer",
                                 10);
                     }
-                    Pair<PeerOpponent, SaleItem> pair = getPeerBySaleItemDescription(uuid, msgTokens[1]);
+                    Pair<PeerOpponent, SaleItem> pair = getPeerBySaleItemDescription(senderUuid, msgTokens[1]);
                     if(pair != null && pair.getLeft() != null && pair.getLeft().getKey() != null) {
                         PeerOpponent peer = pair.getLeft();
                         String key = keyToHex(peer.getKey());
@@ -723,7 +752,7 @@ public class Peer {
                 Cipher cipher = Cipher.getInstance(ASSYMETRIC_ALGORITHM);
                 cipher.init(Cipher.ENCRYPT_MODE, key);
                 String encrypted = DatatypeConverter.printHexBinary(cipher.doFinal(message.getBytes(StandardCharsets.UTF_8)));
-                connection.sendMessage(String.format("ENCRYPT/%s",encrypted));
+                connection.sendMessage(String.format("ENCRYPTED/%s",encrypted));
             } catch (NoSuchAlgorithmException | IllegalBlockSizeException | BadPaddingException | InvalidKeyException | NoSuchPaddingException e) {
                 e.printStackTrace();
             }

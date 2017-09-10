@@ -140,15 +140,17 @@ public class MulticastPeer {
     private void initPropagateMessageThread(){
         Thread propagateMessage = new Thread(()->{
             while(executionEnable){
-                if(receiveMessageQueue.isEmpty()) {
-                    Thread.yield();
-                    continue;
-                }
-                try {
-                    NetAddressedMessage addressedMessage = receiveMessageQueue.take();
-                    netMessageReceivedEvent(addressedMessage.getMessage(), addressedMessage.getSenderAddress());
-                } catch (InterruptedException e) {
-                    System.out.println("Interrupted: " + e.getMessage());
+                synchronized (receiveMessageQueue) {
+                    if (receiveMessageQueue.isEmpty()) {
+                        Thread.yield();
+                        continue;
+                    }
+                    try {
+                        NetAddressedMessage addressedMessage = receiveMessageQueue.take();
+                        netMessageReceivedEvent(addressedMessage.getMessage(), addressedMessage.getSenderAddress());
+                    } catch (InterruptedException e) {
+                        System.out.println("Interrupted: " + e.getMessage());
+                    }
                 }
                 Thread.yield();
             }
