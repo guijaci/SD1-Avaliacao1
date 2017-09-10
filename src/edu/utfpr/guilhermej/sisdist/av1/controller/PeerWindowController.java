@@ -20,6 +20,7 @@ public class PeerWindowController {
     public GridPane gridPane;
     public TextArea textAreaOutput;
     public Button searchItemButton;
+    public Label moneyLabel;
 
     private Dialog<Pair<String, Float>> newSaleItemDialog = null;
     private TextInputDialog searchItemDialog = null;
@@ -60,12 +61,22 @@ public class PeerWindowController {
 
     public void setPeer(Peer peer) {
         this.peer = peer;
-        peer.addMulticastMessageEventListener(message->/*{
-            synchronized(messageLock) {*/
-                textAreaOutput.appendText(message.concat("\n"))//;
-        /*}}*/);
-                peer.addIndexerConnectionEventListener(connected->searchItemButton.setDisable(!connected));
-            }
+        moneyLabel.setText(getMoneyText(peer.getMoney()));
+        peer.addIndexerConnectionEventListener(connected -> Platform.runLater(()->{
+                searchItemButton.setDisable(!connected);
+        }));
+        peer.addMoneyListener(value -> Platform.runLater(() -> {
+                moneyLabel.setText(getMoneyText(value));
+        }));
+        peer.addMulticastMessageEventListener(message-> Platform.runLater(()->{
+            synchronized(messageLock) {
+                textAreaOutput.appendText(message.concat("\n"));
+            }}));
+    }
+
+    private String getMoneyText(float value) {
+        return String.format("Money: $%.02f", value);
+    }
 
     private Dialog<Pair<String, Float>> buildNewSaleItemDialog() {
         Dialog<Pair<String, Float>> newSaleItemDialog = new Dialog<>();

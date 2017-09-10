@@ -1,5 +1,7 @@
 package edu.utfpr.guilhermej.sisdist.av1.model;
 
+import com.sun.org.apache.bcel.internal.generic.IFLE;
+import edu.utfpr.guilhermej.sisdist.av1.listener.IFloatEventListener;
 import edu.utfpr.guilhermej.sisdist.av1.listener.IMessageEventListener;
 import edu.utfpr.guilhermej.sisdist.av1.listener.INetMessageEventListener;
 import edu.utfpr.guilhermej.sisdist.av1.listener.ITriggerEventListener;
@@ -41,8 +43,9 @@ public class Peer {
     private final Map<UUID, PeerOpponent> peerMap;
     private final List<SaleItem> saleItemList;
 
-    private List<IMessageEventListener> messageEventListeners;
-    private List<ITriggerEventListener> indexerConnectionEventListeners;
+    private final List<IMessageEventListener> messageEventListeners;
+    private final List<ITriggerEventListener> indexerConnectionEventListeners;
+    private final List<IFloatEventListener> moneyEventListener;
 
     private float money = INITIAL_MONEY;
     private int tcpPort;
@@ -58,7 +61,8 @@ public class Peer {
         saleItemList = new ArrayList<>();
 
         messageEventListeners = new ArrayList<>();
-        indexerConnectionEventListeners = new ArrayList();
+        indexerConnectionEventListeners = new ArrayList<>();
+        moneyEventListener = new ArrayList<>();
 
         indexerUpLock = new Object();
 
@@ -91,6 +95,16 @@ public class Peer {
 
     public String getId(){
         return uuid.toString();
+    }
+
+    public float getMoney() {
+        return money;
+    }
+
+    public Peer setMoney(float money) {
+        this.money = money;
+        onMoneyEventAsync(money);
+        return this;
     }
 
     public void addSaleItem(SaleItem item){
@@ -147,6 +161,14 @@ public class Peer {
         indexerConnectionEventListeners.remove(listener);
     }
 
+    public void addMoneyListener(IFloatEventListener listener){
+        moneyEventListener.add(listener);
+    }
+
+    public void removeMoneyListener(IFloatEventListener listener){
+        moneyEventListener.remove(listener);
+    }
+
     @Override
     public String toString() {
         return String.format("Peer ID: [%s]- TCP Port: [%d]",uuid.toString(),tcpPort);
@@ -160,6 +182,16 @@ public class Peer {
         Thread onMessageThread = new Thread(()->onMessageEvent(message));
         onMessageThread.setName("Asynchronous Message Event");
         onMessageThread.start();
+    }
+
+    private void onMoneyEvent(float value){
+        moneyEventListener.forEach(listener -> listener.onFloatEvent(value));
+    }
+
+    private void onMoneyEventAsync(float value){
+        Thread onMoneyEventThread = new Thread(() -> onMoneyEvent(value));
+        onMoneyEventThread.setName("Money Event Thread");
+        onMoneyEventThread.start();
     }
 
     private void onIndexerConnectionEvent(boolean connected){
@@ -337,7 +369,7 @@ public class Peer {
                     tcpFinishMessage(connection, peer.getKey());
                     String response = connection.getMessage();
                     if(processTcpMessage(response, connection, peer.getUuid(), null))
-                        money -= item.getPrice();
+                        setMoney(money -= item.getPrice());
                 } catch (IOException e) {
                     System.out.println("Peer IO: " + e.getMessage());
                 } finally {
@@ -530,7 +562,7 @@ public class Peer {
                             .findFirst();
                     if(optional.isPresent()) {
                         optional.ifPresent(saleItemList::remove);
-                        money += wanted.getPrice();
+                        setMoney(money + wanted.getPrice());
                     }
                     else
                         tcpErrorMessage(connection, encryptionKey, "Transaction refused", 60);
@@ -830,4 +862,5 @@ public class Peer {
     private static void delay(){
         delay(1);
     }
+
 }
