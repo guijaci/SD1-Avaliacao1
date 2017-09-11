@@ -1,6 +1,5 @@
 package edu.utfpr.guilhermej.sisdist.av1.model;
 
-import com.sun.org.apache.bcel.internal.generic.IFLE;
 import edu.utfpr.guilhermej.sisdist.av1.listener.IFloatEventListener;
 import edu.utfpr.guilhermej.sisdist.av1.listener.IMessageEventListener;
 import edu.utfpr.guilhermej.sisdist.av1.listener.INetMessageEventListener;
@@ -235,7 +234,7 @@ public class Peer {
             Thread tcpConnection = new Thread(()->{
                 try {
                     String message = connection.getMessage();
-                    processTcpMessage(message, connection, null,null);
+                    processTcpMessage(message, new ConnectionContext(connection, null, null));
                 } catch (IOException e) {
                     System.out.println("Peer IO: " + e.getMessage());
                 }finally {
@@ -261,7 +260,7 @@ public class Peer {
                     tcpKeyMessage(connection, publicKey, null);
                     tcpFinishMessage(connection, null);
                     String response = connection.getMessage();
-                    if(processTcpMessage(response, connection, null, null))
+                    if(processTcpMessage(response, new ConnectionContext(connection, null, null)))
                         break;
                 } catch (IOException e) {
                     System.out.println("Peer IO: " + e.getMessage());
@@ -291,7 +290,7 @@ public class Peer {
                     }
                     tcpFinishMessage(connection, null);
                     String response = connection.getMessage();
-                    if(processTcpMessage(response, connection, peer.getUuid(), null))
+                    if(processTcpMessage(response, new ConnectionContext(connection, peer.getUuid(), null)))
                         break;
                 } catch (IOException e) {
                     System.out.println("Peer IO: " + e.getMessage());
@@ -317,7 +316,7 @@ public class Peer {
                     tcpAddMessage(connection, null, item);
                     tcpFinishMessage(connection, null);
                     String response = connection.getMessage();
-                    if(processTcpMessage(response, connection, peer.getUuid(), null))
+                    if(processTcpMessage(response, new ConnectionContext(connection, peer.getUuid(), null)))
                         break;
                 } catch (IOException e) {
                     System.out.println("Peer IO: " + e.getMessage());
@@ -343,7 +342,7 @@ public class Peer {
                     tcpSearchMessage(connection, null, description);
                     tcpFinishMessage(connection, null);
                     String response = connection.getMessage();
-                    if(processTcpMessage(response, connection, peer.getUuid(), null))
+                    if(processTcpMessage(response, new ConnectionContext(connection, peer.getUuid(), null)))
                         break;
                 } catch (IOException e) {
                     System.out.println("Peer IO: " + e.getMessage());
@@ -368,7 +367,7 @@ public class Peer {
                     tcpBuyMessage(connection, peer.getKey(), item);
                     tcpFinishMessage(connection, peer.getKey());
                     String response = connection.getMessage();
-                    if(processTcpMessage(response, connection, peer.getUuid(), null))
+                    if(processTcpMessage(response, new ConnectionContext(connection, peer.getUuid(), null)))
                         setMoney(money -= item.getPrice());
                 } catch (IOException e) {
                     System.out.println("Peer IO: " + e.getMessage());
@@ -515,19 +514,16 @@ public class Peer {
                 uuid.toString()));
     }
 
-    private boolean processTcpMessage(String message,
-                                      ISocketConnection connection,
-                                      UUID senderUuid,
-                                      Key encryptionKey)
+    private boolean processTcpMessage(String message, ConnectionContext context)
             throws IOException {
         onMessageEvent("TCP: " + message);
         String[] msgTokens = message.split("/");
         String messageType = msgTokens[0];
         switch (messageType){
             case "ADD":
-                if(senderUuid != null){
+                if(context.getSenderUuid() != null){
                     if (!indexing) {
-                        tcpErrorMessage(connection, encryptionKey,
+                        tcpErrorMessage(context.getConnection(), context.getEncryptionKey(),
                                 "Process is not indexer",
                                 10);
                     }
@@ -536,18 +532,18 @@ public class Peer {
                             .setPrice(Float.parseFloat(msgTokens[2]));
                     boolean failed = true;
                     synchronized (peerMap){
-                        if (peerMap.containsKey(senderUuid)) {
-                            peerMap.get(senderUuid).addItem(item);
+                        if (peerMap.containsKey(context.getSenderUuid())) {
+                            peerMap.get(context.getSenderUuid()).addItem(item);
                             failed = false;
                         }
                     }
                     if(failed)
-                        tcpErrorMessage(connection, encryptionKey,
+                        tcpErrorMessage(context.getConnection(), context.getEncryptionKey(),
                                 "Process don't know requester",
                                 20);
                 }
                 else
-                    tcpErrorMessage(connection,null,
+                    tcpErrorMessage(context.getConnection(),null,
                             "Process have not announced itself", 30);
                 break;
             case "BUY":
@@ -565,7 +561,7 @@ public class Peer {
                         setMoney(money + wanted.getPrice());
                     }
                     else
-                        tcpErrorMessage(connection, encryptionKey, "Transaction refused", 60);
+                        tcpErrorMessage(context.getConnection(), context.getEncryptionKey(), "Transaction refused", 60);
                 }
                 break;
             case "ENCRYPTED":
@@ -573,7 +569,7 @@ public class Peer {
                     Cipher cipher = Cipher.getInstance(ASSYMETRIC_ALGORITHM);
                     cipher.init(Cipher.DECRYPT_MODE, keyPair.getPrivate());
                     String decrypted = new String(cipher.doFinal(DatatypeConverter.parseHexBinary(msgTokens[1])), StandardCharsets.UTF_8);
-                    processTcpMessage(decrypted, connection, senderUuid, encryptionKey);
+                    processTcpMessage(decrypted, new ConnectionContext(context.getConnection(), context.getSenderUuid(), context.getEncryptionKey()));
                 } catch (NoSuchAlgorithmException | NoSuchPaddingException | InvalidKeyException | BadPaddingException | IllegalBlockSizeException e) {
                     e.printStackTrace();
                 }
@@ -582,17 +578,17 @@ public class Peer {
                 String errorMsg = msgTokens[2];
                 int errorCode = Integer.parseInt(msgTokens[1]);
                 String e;
-                if(senderUuid != null)
-                    e = String.format("ERROR %d: %s send \"%s\"", errorCode, senderUuid.toString(), errorMsg);
+                if(context.getSenderUuid() != null)
+                    e = String.format("ERROR %d: %s send \"%s\"", errorCode, context.getSenderUuid().toString(), errorMsg);
                 else
                     e = String.format("ERROR %d: %s", errorCode, errorMsg);
                 System.out.println(e);
                 throw new IOException(e);
             case "FINISH":
-                tcpOkMessage(connection, encryptionKey);
+                tcpOkMessage(context.getConnection(), context.getEncryptionKey());
                 return true;
             case "FOUND":
-                if(indexerUp && senderUuid != null && senderUuid.equals(lastActiveIndexer.getUuid())) {
+                if(indexerUp && context.getSenderUuid() != null && context.getSenderUuid().equals(lastActiveIndexer.getUuid())) {
                     if (msgTokens.length > 1) {
                         SaleItem saleItem = new SaleItem()
                                 .setDescription(msgTokens[1])
@@ -609,22 +605,22 @@ public class Peer {
                             }
                         }
                         if(failed)
-                            tcpErrorMessage(connection,null, String.format("Identifier \"%s\" not known by peer", uuid.toString()),50);
+                            tcpErrorMessage(context.getConnection(),null, String.format("Identifier \"%s\" not known by peer", uuid.toString()),50);
                     }
                     //TODO: quando nenhum item foi encontrado
                     //else
                         //item not found
                 }
                 else
-                    tcpErrorMessage(connection,null, "Client have not requested search", 40);
+                    tcpErrorMessage(context.getConnection(),null, "Client have not requested search", 40);
                 break;
             case "INTRODUCE":
-                senderUuid = UUID.fromString(msgTokens[1]);
+                context.setSenderUuid(UUID.fromString(msgTokens[1]));
                 break;
             case "KEY":
-                if(senderUuid != null) {
+                if(context.getSenderUuid() != null) {
                     if (!indexing) {
-                        tcpErrorMessage(connection, encryptionKey,
+                        tcpErrorMessage(context.getConnection(), context.getEncryptionKey(),
                                 "Process is not indexer",
                                 10);
                     }
@@ -632,48 +628,48 @@ public class Peer {
                     Key publicKey = hexToKey(hexString);
                     boolean failed = true;
                     synchronized (peerMap){
-                        if (peerMap.containsKey(senderUuid)) {
-                            peerMap.get(senderUuid).setKey(publicKey);
-                            tcpOkMessage(connection, encryptionKey);
+                        if (peerMap.containsKey(context.getSenderUuid())) {
+                            peerMap.get(context.getSenderUuid()).setKey(publicKey);
+                            tcpOkMessage(context.getConnection(), context.getEncryptionKey());
                             failed = false;
                         }
                     }
                     if(failed)
-                        tcpErrorMessage(connection, encryptionKey,
+                        tcpErrorMessage(context.getConnection(), context.getEncryptionKey(),
                                 "Process don't know requester",
                                 20);
                 }
                 else
-                    tcpErrorMessage(connection,null,
+                    tcpErrorMessage(context.getConnection(),null,
                             "Process have not announced itself", 30);
                 break;
             case "OK":
                 return true;
             case "SEARCH":
-                if(senderUuid != null) {
+                if(context.getSenderUuid() != null) {
                     if (!indexing) {
-                        tcpErrorMessage(connection, encryptionKey,
+                        tcpErrorMessage(context.getConnection(), context.getEncryptionKey(),
                                 "Process is not indexer",
                                 10);
                     }
-                    Pair<PeerOpponent, SaleItem> pair = getPeerBySaleItemDescription(senderUuid, msgTokens[1]);
+                    Pair<PeerOpponent, SaleItem> pair = getPeerBySaleItemDescription(context.getSenderUuid(), msgTokens[1]);
                     if(pair != null && pair.getLeft() != null && pair.getLeft().getKey() != null) {
                         PeerOpponent peer = pair.getLeft();
                         String key = keyToHex(peer.getKey());
                         SaleItem item = pair.getRight();
-                        tcpFoundMessage(connection, encryptionKey, peer, item, key);
+                        tcpFoundMessage(context.getConnection(), context.getEncryptionKey(), peer, item, key);
                     }
                     else
-                        connection.sendMessage("FOUND");
+                        context.getConnection().sendMessage("FOUND");
                 }
                 else
-                    tcpErrorMessage(connection,null,
+                    tcpErrorMessage(context.getConnection(),null,
                             "Process have not announced itself", 30);
                 break;
             default:
                 throw new IOException("Unknown Message");
         }
-        return processTcpMessage(connection.getMessage(), connection, senderUuid, encryptionKey);
+        return processTcpMessage(context.getConnection().getMessage(), new ConnectionContext(context.getConnection(), context.getSenderUuid(), context.getEncryptionKey()));
     }
 
     private void tcpFoundMessage(ISocketConnection connection,

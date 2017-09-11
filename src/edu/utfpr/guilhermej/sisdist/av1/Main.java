@@ -29,7 +29,7 @@ public class Main extends Application {
         controller.setPeer(peer);
 
         //Configurando janela da view
-        primaryStage.setResizable(false);
+//        primaryStage.setResizable(false);
         primaryStage.setTitle("SD1-"+peer.toString());
         primaryStage.setScene(new Scene(root, 800, 450));
         primaryStage.setOnCloseRequest(new EventHandler<WindowEvent>() {
