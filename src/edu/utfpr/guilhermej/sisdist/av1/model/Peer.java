@@ -17,6 +17,7 @@ import java.security.*;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class Peer {
     public static final int TCP_TIMEOUT = 5000;
@@ -128,7 +129,7 @@ public class Peer {
             sendSearchItemByDescription(description, lastActiveIndexer);
         }
         else{
-            Pair<PeerOpponent, SaleItem> pair = getPeerBySaleItemDescription(uuid, description);
+            Pair<PeerOpponent, SaleItem> pair = getPairPeerItemByPriceAndReputation(getPeerBySaleItemDescription(uuid, description));
             if(pair != null)
                 sendBuyItem(pair.getRight(), pair.getLeft());
             //TODO: caso nao encontre nenhum item
@@ -173,49 +174,6 @@ public class Peer {
         return String.format("Peer ID: [%s]- TCP Port: [%d]",uuid.toString(),tcpPort);
     }
 
-    private void onMessageEvent(String message) {
-        messageEventListeners.forEach(listener->listener.onMessageReceived(message));
-    }
-
-    private void onMessageEventAsync(String message) {
-        Thread onMessageThread = new Thread(()->onMessageEvent(message));
-        onMessageThread.setName("Asynchronous Message Event");
-        onMessageThread.start();
-    }
-
-    private void onMoneyEvent(float value){
-        moneyEventListener.forEach(listener -> listener.onFloatEvent(value));
-    }
-
-    private void onMoneyEventAsync(float value){
-        Thread onMoneyEventThread = new Thread(() -> onMoneyEvent(value));
-        onMoneyEventThread.setName("Money Event Thread");
-        onMoneyEventThread.start();
-    }
-
-    private void onIndexerConnectionEvent(boolean connected){
-        indexerConnectionEventListeners.forEach(listener->listener.onTriggerEvent(connected));
-    }
-
-    private void refreshIndexer(UUID indexerUuid) {
-        synchronized (peerMap){
-            setLastActiveIndexer(peerMap.get(indexerUuid));
-        }
-        if(!indexing) {
-            sendKey(lastActiveIndexer, keyPair.getPublic());
-            if (!saleItemList.isEmpty())
-                sendAddSaleItemList(saleItemList, lastActiveIndexer);
-        }
-        else {
-            synchronized (peerMap) {
-                PeerOpponent indexerInMap = peerMap.get(indexerUuid);
-                synchronized (saleItemList) {
-                    saleItemList.forEach(indexerInMap::addItem);
-                }
-            }
-        }
-    }
-
     private KeyPair buildKeyPair(int length, String algorithm){
         try{
             KeyPairGenerator keyGen;
@@ -226,160 +184,6 @@ public class Peer {
             e.printStackTrace();
         }
         return null;
-    }
-
-    private void onTcpClientConnect(TcpSynchroServerSideClient connection){
-        try {
-            connection.setTimeout(TCP_TIMEOUT);
-            Thread tcpConnection = new Thread(()->{
-                try {
-                    String message = connection.getMessage();
-                    processTcpMessage(message, new ConnectionContext(connection, null, null));
-                } catch (IOException e) {
-                    System.out.println("Peer IO: " + e.getMessage());
-                }finally {
-                    connection.disconnect();
-                }
-            });
-            tcpConnection.setName("TCP Server Side Client Connection");
-            tcpConnection.start();
-        } catch (SocketException e) {
-            System.out.println("Peer Socket: " + e.getMessage());
-        }
-    }
-
-    private void sendKey(PeerOpponent peer, Key key){
-        Thread sendPublicKey = new Thread(()->{
-            TcpSynchroClient connection = null;
-            for(int i = 0; i < RECONNECTION_TRIES; i++) {
-                try {
-                    connection = new TcpSynchroClient(peer.getIpAddress(), peer.getPortTcp());
-                    connection.setTimeout(TCP_TIMEOUT);
-                    String publicKey = keyToHex(key);
-                    tcpIntroduceMessage(connection, null);
-                    tcpKeyMessage(connection, publicKey, null);
-                    tcpFinishMessage(connection, null);
-                    String response = connection.getMessage();
-                    if(processTcpMessage(response, new ConnectionContext(connection, null, null)))
-                        break;
-                } catch (IOException e) {
-                    System.out.println("Peer IO: " + e.getMessage());
-                } finally {
-                    if (connection != null)
-                        connection.disconnect();
-                    delay();
-                }
-            }
-        });
-        sendPublicKey.setName("TCP Client Send Public Key");
-        sendPublicKey.start();
-    }
-
-    private void sendAddSaleItemList(List<SaleItem> itemList, PeerOpponent peer){
-        Thread sendSaleItemList = new Thread(()-> {
-            TcpSynchroClient connection = null;
-            for(int i = 0; i < RECONNECTION_TRIES; i++) {
-                try {
-                    connection = new TcpSynchroClient(peer.getIpAddress(), peer.getPortTcp());
-                    connection.setTimeout(TCP_TIMEOUT);
-                    String publicKey = keyToHex(keyPair.getPublic());
-                    tcpIntroduceMessage(connection, null);
-                    synchronized (itemList) {
-                        for (SaleItem item : itemList)
-                            tcpAddMessage(connection, null, item);
-                    }
-                    tcpFinishMessage(connection, null);
-                    String response = connection.getMessage();
-                    if(processTcpMessage(response, new ConnectionContext(connection, peer.getUuid(), null)))
-                        break;
-                } catch (IOException e) {
-                    System.out.println("Peer IO: " + e.getMessage());
-                } finally {
-                    if (connection != null)
-                        connection.disconnect();
-                    delay();
-                }
-            }
-        });
-        sendSaleItemList.setName("TCP Client Send Sale Item List");
-        sendSaleItemList.start();
-    }
-
-    private void sendAddSaleItem(SaleItem item, PeerOpponent peer){
-        Thread sendSaleItemList = new Thread(()-> {
-            TcpSynchroClient connection = null;
-            for(int i = 0; i < RECONNECTION_TRIES; i++) {
-                try {
-                    connection = new TcpSynchroClient(peer.getIpAddress(), peer.getPortTcp());
-                    connection.setTimeout(TCP_TIMEOUT);
-                    tcpIntroduceMessage(connection, null);
-                    tcpAddMessage(connection, null, item);
-                    tcpFinishMessage(connection, null);
-                    String response = connection.getMessage();
-                    if(processTcpMessage(response, new ConnectionContext(connection, peer.getUuid(), null)))
-                        break;
-                } catch (IOException e) {
-                    System.out.println("Peer IO: " + e.getMessage());
-                } finally {
-                    if (connection != null)
-                        connection.disconnect();
-                    delay();
-                }
-            }
-        });
-        sendSaleItemList.setName("TCP Client Send Sale Item");
-        sendSaleItemList.start();
-    }
-
-    private void sendSearchItemByDescription(String description, PeerOpponent peer){
-        Thread sendSearchItemByDescriptionThread = new Thread(()-> {
-            TcpSynchroClient connection = null;
-            for(int i = 0; i < RECONNECTION_TRIES; i++) {
-                try {
-                    connection = new TcpSynchroClient(peer.getIpAddress(), peer.getPortTcp());
-                    connection.setTimeout(TCP_TIMEOUT);
-                    tcpIntroduceMessage(connection, null);
-                    tcpSearchMessage(connection, null, description);
-                    tcpFinishMessage(connection, null);
-                    String response = connection.getMessage();
-                    if(processTcpMessage(response, new ConnectionContext(connection, peer.getUuid(), null)))
-                        break;
-                } catch (IOException e) {
-                    System.out.println("Peer IO: " + e.getMessage());
-                } finally {
-                    if (connection != null)
-                        connection.disconnect();
-                    delay();
-                }
-            }
-        });
-        sendSearchItemByDescriptionThread.setName("TCP Client Send Search Item by Description");
-        sendSearchItemByDescriptionThread.start();
-    }
-
-    private void sendBuyItem(SaleItem item, PeerOpponent peer){
-        Thread sendBuyItem = new Thread(()-> {
-            TcpSynchroClient connection = null;
-                try {
-                    connection = new TcpSynchroClient(peer.getIpAddress(), peer.getPortTcp());
-                    connection.setTimeout(TCP_TIMEOUT);
-                    tcpIntroduceMessage(connection, peer.getKey());
-                    tcpBuyMessage(connection, peer.getKey(), item);
-                    tcpFinishMessage(connection, peer.getKey());
-                    String response = connection.getMessage();
-                    if(processTcpMessage(response, new ConnectionContext(connection, peer.getUuid(), null)))
-                        setMoney(money -= item.getPrice());
-                } catch (IOException e) {
-                    System.out.println("Peer IO: " + e.getMessage());
-                } finally {
-                    if (connection != null)
-                        connection.disconnect();
-                    delay();
-                }
-
-        });
-        sendBuyItem.setName("TCP Client Send Search Item by Description");
-        sendBuyItem.start();
     }
 
     private void initIndexerControllThread(){
@@ -429,6 +233,205 @@ public class Peer {
         });
         peerThread.setName("Indexer Controll Thread");
         peerThread.start();
+    }
+
+    private void refreshIndexer(UUID indexerUuid) {
+        synchronized (peerMap){
+            setLastActiveIndexer(peerMap.get(indexerUuid));
+        }
+        if(!indexing) {
+            sendKey(lastActiveIndexer, keyPair.getPublic());
+            if (!saleItemList.isEmpty())
+                sendAddSaleItemList(saleItemList, lastActiveIndexer);
+        }
+        else {
+            synchronized (peerMap) {
+                PeerOpponent indexerInMap = peerMap.get(indexerUuid);
+                synchronized (saleItemList) {
+                    saleItemList.forEach(indexerInMap::addItem);
+                }
+            }
+        }
+    }
+
+    private void onMessageEvent(String message) {
+        messageEventListeners.forEach(listener->listener.onMessageReceived(message));
+    }
+
+    private void onMessageEventAsync(String message) {
+        Thread onMessageThread = new Thread(()->onMessageEvent(message));
+        onMessageThread.setName("Asynchronous Message Event");
+        onMessageThread.start();
+    }
+
+    private void onMoneyEvent(float value){
+        moneyEventListener.forEach(listener -> listener.onFloatEvent(value));
+    }
+
+    private void onMoneyEventAsync(float value){
+        Thread onMoneyEventThread = new Thread(() -> onMoneyEvent(value));
+        onMoneyEventThread.setName("Money Event Thread");
+        onMoneyEventThread.start();
+    }
+
+    private void onIndexerConnectionEvent(boolean connected){
+        indexerConnectionEventListeners.forEach(listener->listener.onTriggerEvent(connected));
+    }
+
+    private void onTcpClientConnect(TcpSynchroServerSideClient connection){
+        try {
+            connection.setTimeout(TCP_TIMEOUT);
+            Thread tcpConnection = new Thread(()->{
+                try {
+                    String message = connection.getMessage();
+                    processTcpMessage(message, new ConnectionContext(connection, null, null));
+                } catch (IOException e) {
+                    System.out.println("Peer IO: " + e.getMessage());
+                }finally {
+                    connection.disconnect();
+                }
+            });
+            tcpConnection.setName("TCP Server Side Client Connection");
+            tcpConnection.start();
+        } catch (SocketException e) {
+            System.out.println("Peer Socket: " + e.getMessage());
+        }
+    }
+
+    private void sendAddSaleItem(SaleItem item, PeerOpponent peer){
+        Thread sendSaleItemList = new Thread(()-> {
+            TcpSynchroClient connection = null;
+            for(int i = 0; i < RECONNECTION_TRIES; i++) {
+                try {
+                    connection = new TcpSynchroClient(peer.getIpAddress(), peer.getPortTcp());
+                    connection.setTimeout(TCP_TIMEOUT);
+                    tcpIntroduceMessage(connection, null);
+                    tcpAddMessage(connection, null, item);
+                    tcpFinishMessage(connection, null);
+                    String response = connection.getMessage();
+                    if(processTcpMessage(response, new ConnectionContext(connection, peer.getUuid(), null)))
+                        break;
+                } catch (IOException e) {
+                    System.out.println("Peer IO: " + e.getMessage());
+                } finally {
+                    if (connection != null)
+                        connection.disconnect();
+                    delay();
+                }
+            }
+        });
+        sendSaleItemList.setName("TCP Client Send Sale Item");
+        sendSaleItemList.start();
+    }
+
+    private void sendAddSaleItemList(List<SaleItem> itemList, PeerOpponent peer){
+        Thread sendSaleItemList = new Thread(()-> {
+            TcpSynchroClient connection = null;
+            for(int i = 0; i < RECONNECTION_TRIES; i++) {
+                try {
+                    connection = new TcpSynchroClient(peer.getIpAddress(), peer.getPortTcp());
+                    connection.setTimeout(TCP_TIMEOUT);
+                    String publicKey = keyToHex(keyPair.getPublic());
+                    tcpIntroduceMessage(connection, null);
+                    synchronized (itemList) {
+                        for (SaleItem item : itemList)
+                            tcpAddMessage(connection, null, item);
+                    }
+                    tcpFinishMessage(connection, null);
+                    String response = connection.getMessage();
+                    if(processTcpMessage(response, new ConnectionContext(connection, peer.getUuid(), null)))
+                        break;
+                } catch (IOException e) {
+                    System.out.println("Peer IO: " + e.getMessage());
+                } finally {
+                    if (connection != null)
+                        connection.disconnect();
+                    delay();
+                }
+            }
+        });
+        sendSaleItemList.setName("TCP Client Send Sale Item List");
+        sendSaleItemList.start();
+    }
+
+    private void sendBuyItem(SaleItem item, PeerOpponent peer){
+        Thread sendBuyItem = new Thread(()-> {
+            TcpSynchroClient connection = null;
+            try {
+                connection = new TcpSynchroClient(peer.getIpAddress(), peer.getPortTcp());
+                connection.setTimeout(TCP_TIMEOUT);
+                tcpIntroduceMessage(connection, peer.getKey());
+                tcpBuyMessage(connection, peer.getKey(), item);
+                tcpFinishMessage(connection, peer.getKey());
+                String response = connection.getMessage();
+                if(processTcpMessage(response, new ConnectionContext(connection, peer.getUuid(), null))) {
+                    setMoney(money -= item.getPrice());
+                    peer.setReputation(peer.getReputation()+1);
+                }
+            } catch (IOException e) {
+                System.out.println("Peer IO: " + e.getMessage());
+            } finally {
+                if (connection != null)
+                    connection.disconnect();
+                delay();
+            }
+
+        });
+        sendBuyItem.setName("TCP Client Send Search Item by Description");
+        sendBuyItem.start();
+    }
+
+    private void sendKey(PeerOpponent peer, Key key){
+        Thread sendPublicKey = new Thread(()->{
+            TcpSynchroClient connection = null;
+            for(int i = 0; i < RECONNECTION_TRIES; i++) {
+                try {
+                    connection = new TcpSynchroClient(peer.getIpAddress(), peer.getPortTcp());
+                    connection.setTimeout(TCP_TIMEOUT);
+                    String publicKey = keyToHex(key);
+                    tcpIntroduceMessage(connection, null);
+                    tcpKeyMessage(connection, publicKey, null);
+                    tcpFinishMessage(connection, null);
+                    String response = connection.getMessage();
+                    if(processTcpMessage(response, new ConnectionContext(connection, null, null)))
+                        break;
+                } catch (IOException e) {
+                    System.out.println("Peer IO: " + e.getMessage());
+                } finally {
+                    if (connection != null)
+                        connection.disconnect();
+                    delay();
+                }
+            }
+        });
+        sendPublicKey.setName("TCP Client Send Public Key");
+        sendPublicKey.start();
+    }
+
+    private void sendSearchItemByDescription(String description, PeerOpponent peer){
+        Thread sendSearchItemByDescriptionThread = new Thread(()-> {
+            TcpSynchroClient connection = null;
+            for(int i = 0; i < RECONNECTION_TRIES; i++) {
+                try {
+                    connection = new TcpSynchroClient(peer.getIpAddress(), peer.getPortTcp());
+                    connection.setTimeout(TCP_TIMEOUT);
+                    tcpIntroduceMessage(connection, null);
+                    tcpSearchMessage(connection, null, description);
+                    tcpFinishMessage(connection, null);
+                    String response = connection.getMessage();
+                    if(processTcpMessage(response, new ConnectionContext(connection, peer.getUuid(), null)))
+                        break;
+                } catch (IOException e) {
+                    System.out.println("Peer IO: " + e.getMessage());
+                } finally {
+                    if (connection != null)
+                        connection.disconnect();
+                    delay();
+                }
+            }
+        });
+        sendSearchItemByDescriptionThread.setName("TCP Client Send Search Item by Description");
+        sendSearchItemByDescriptionThread.start();
     }
 
     private void processMulticastMessage(String message, InetAddress address){
@@ -595,17 +598,25 @@ public class Peer {
                                 .setPrice(Float.parseFloat(msgTokens[2]));
                         UUID sellerUuid = UUID.fromString(msgTokens[3]);
                         Key sellerKey = hexToKey(msgTokens[4]);
+                        if(context.getPeerItemPairList() == null)
+                            context.setPeerItemPairList(new ArrayList<>());
                         boolean failed = true;
-                        synchronized (peerMap){
-                            if(peerMap.containsKey(sellerUuid)) {
-                                PeerOpponent seller = peerMap.get(sellerUuid)
-                                        .setKey(sellerKey);
-                                sendBuyItem(saleItem, seller);
+                        synchronized (peerMap) {
+                            if (peerMap.containsKey(sellerUuid)) {
                                 failed = false;
+                                PeerOpponent peer = peerMap.get(sellerUuid);
+                                peer.setKey(sellerKey);
+                                context.getPeerItemPairList().add(new Pair<>(peer, saleItem));
                             }
                         }
                         if(failed)
                             tcpErrorMessage(context.getConnection(),null, String.format("Identifier \"%s\" not known by peer", uuid.toString()),50);
+                    }
+                    else if(context.getPeerItemPairList() != null && !context.getPeerItemPairList().isEmpty()){
+                        Pair<PeerOpponent, SaleItem> pair = getPairPeerItemByPriceAndReputation(context.getPeerItemPairList());
+                        if(pair != null)
+                            sendBuyItem(pair.getRight(), pair.getLeft());
+                        //else
                     }
                     //TODO: quando nenhum item foi encontrado
                     //else
@@ -652,15 +663,16 @@ public class Peer {
                                 "Process is not indexer",
                                 10);
                     }
-                    Pair<PeerOpponent, SaleItem> pair = getPeerBySaleItemDescription(context.getSenderUuid(), msgTokens[1]);
-                    if(pair != null && pair.getLeft() != null && pair.getLeft().getKey() != null) {
-                        PeerOpponent peer = pair.getLeft();
-                        String key = keyToHex(peer.getKey());
-                        SaleItem item = pair.getRight();
-                        tcpFoundMessage(context.getConnection(), context.getEncryptionKey(), peer, item, key);
+                    List<Pair<PeerOpponent, SaleItem>> pairList = getPeerBySaleItemDescription(context.getSenderUuid(), msgTokens[1]);
+                    if(pairList != null) {
+                        for (Pair<PeerOpponent, SaleItem> pair: pairList) {
+                            PeerOpponent peer = pair.getLeft();
+                            String key = keyToHex(peer.getKey());
+                            SaleItem item = pair.getRight();
+                            tcpFoundMessage(context.getConnection(), context.getEncryptionKey(), peer, item, key);
+                        }
                     }
-                    else
-                        context.getConnection().sendMessage("FOUND");
+                    context.getConnection().sendMessage("FOUND");
                 }
                 else
                     tcpErrorMessage(context.getConnection(),null,
@@ -669,7 +681,67 @@ public class Peer {
             default:
                 throw new IOException("Unknown Message");
         }
-        return processTcpMessage(context.getConnection().getMessage(), new ConnectionContext(context.getConnection(), context.getSenderUuid(), context.getEncryptionKey()));
+        return processTcpMessage(context.getConnection().getMessage(), context);
+    }
+
+    private void tcpAddMessage(ISocketConnection connection,
+                               Key key,
+                               SaleItem item)
+            throws IOException {
+        String message = String.format("ADD/%s/%.2f", item.getDescription(), item.getPrice());
+        if(key != null)
+            tcpEncryptedMessage(connection, key, message);
+        else
+            connection.sendMessage(message);
+    }
+
+    private void tcpBuyMessage(ISocketConnection connection,
+                               Key key,
+                               SaleItem item)
+            throws IOException {
+        String message = String.format("BUY/%s/%.02f", item.getDescription(), item.getPrice());
+        if(key != null)
+            tcpEncryptedMessage(connection, key, message);
+        else
+            connection.sendMessage(message);
+    }
+
+    private void tcpEncryptedMessage(ISocketConnection connection,
+                                     Key key,
+                                     String message)
+            throws IOException{
+        if(key != null) {
+            try {
+                Cipher cipher = Cipher.getInstance(ASSYMETRIC_ALGORITHM);
+                cipher.init(Cipher.ENCRYPT_MODE, key);
+                String encrypted = DatatypeConverter.printHexBinary(cipher.doFinal(message.getBytes(StandardCharsets.UTF_8)));
+                connection.sendMessage(String.format("ENCRYPTED/%s",encrypted));
+            } catch (NoSuchAlgorithmException | IllegalBlockSizeException | BadPaddingException | InvalidKeyException | NoSuchPaddingException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private void tcpErrorMessage(ISocketConnection connection,
+                                 Key key,
+                                 String errorMessage,
+                                 int errorCode)
+            throws IOException {
+        String message = String.format("ERROR/%d/%s", errorCode, errorMessage);
+        if(key != null)
+            tcpEncryptedMessage(connection, key, message);
+        else
+            connection.sendMessage(message);
+    }
+
+    private void tcpFinishMessage(ISocketConnection connection,
+                                  Key key)
+            throws IOException {
+        String message = String.format("FINISH");
+        if(key != null)
+            tcpEncryptedMessage(connection, key, message);
+        else
+            connection.sendMessage(message);
     }
 
     private void tcpFoundMessage(ISocketConnection connection,
@@ -706,43 +778,10 @@ public class Peer {
             connection.sendMessage(message);
     }
 
-    private void tcpAddMessage(ISocketConnection connection,
-                               Key key,
-                               SaleItem item)
-            throws IOException {
-        String message = String.format("ADD/%s/%.2f", item.getDescription(), item.getPrice());
-        if(key != null)
-            tcpEncryptedMessage(connection, key, message);
-        else
-            connection.sendMessage(message);
-    }
-
     private void tcpOkMessage(ISocketConnection connection,
                               Key key)
             throws IOException {
         String message = String.format("OK");
-        if(key != null)
-            tcpEncryptedMessage(connection, key, message);
-        else
-            connection.sendMessage(message);
-    }
-
-    private void tcpFinishMessage(ISocketConnection connection,
-                                  Key key)
-            throws IOException {
-        String message = String.format("FINISH");
-        if(key != null)
-            tcpEncryptedMessage(connection, key, message);
-        else
-            connection.sendMessage(message);
-    }
-
-    private void tcpErrorMessage(ISocketConnection connection,
-                                 Key key,
-                                 String errorMessage,
-                                 int errorCode)
-            throws IOException {
-        String message = String.format("ERROR/%d/%s", errorCode, errorMessage);
         if(key != null)
             tcpEncryptedMessage(connection, key, message);
         else
@@ -760,34 +799,7 @@ public class Peer {
             connection.sendMessage(message);
     }
 
-    private void tcpBuyMessage(ISocketConnection connection,
-                               Key key,
-                               SaleItem item)
-            throws IOException {
-        String message = String.format("BUY/%s/%.02f", item.getDescription(), item.getPrice());
-        if(key != null)
-            tcpEncryptedMessage(connection, key, message);
-        else
-            connection.sendMessage(message);
-    }
-
-    private void tcpEncryptedMessage(ISocketConnection connection,
-                                     Key key,
-                                     String message)
-        throws IOException{
-        if(key != null) {
-            try {
-                Cipher cipher = Cipher.getInstance(ASSYMETRIC_ALGORITHM);
-                cipher.init(Cipher.ENCRYPT_MODE, key);
-                String encrypted = DatatypeConverter.printHexBinary(cipher.doFinal(message.getBytes(StandardCharsets.UTF_8)));
-                connection.sendMessage(String.format("ENCRYPTED/%s",encrypted));
-            } catch (NoSuchAlgorithmException | IllegalBlockSizeException | BadPaddingException | InvalidKeyException | NoSuchPaddingException e) {
-                e.printStackTrace();
-            }
-        }
-    }
-
-    private Pair<PeerOpponent, SaleItem> getPeerBySaleItemDescription(UUID requester, String saleItemDescription){
+    private List<Pair<PeerOpponent, SaleItem>> getPeerBySaleItemDescription(UUID requester, String saleItemDescription){
         synchronized (peerMap) {
             if(!peerMap.containsKey(requester))
                 return null;
@@ -802,14 +814,18 @@ public class Peer {
                             .parallelStream()
                             .map( item -> new Pair<>(pair.getValue(), item))
                     )
-                    .min(
-                            (o1, o2) ->
-                            Float.valueOf(o1.getRight().getPrice()).equals(o2.getRight().getPrice()) ?
-                            Integer.compare(o1.getLeft().getReputation(), o1.getLeft().getReputation()) :
-                            Float.compare(o1.getRight().getPrice(), o2.getRight().getPrice() )
-                    )
-                    .orElse( null );
+                    .collect( Collectors.toList() );
         }
+    }
+
+    private Pair<PeerOpponent, SaleItem> getPairPeerItemByPriceAndReputation(List<Pair<PeerOpponent, SaleItem>> pairList) {
+        return pairList
+               .parallelStream()
+               .min((o1, o2) -> Float.valueOf(o1.getRight().getPrice()).equals(o2.getRight().getPrice()) ?
+                       Integer.compare(o2.getLeft().getReputation(), o1.getLeft().getReputation()):
+                       Float.compare(o1.getRight().getPrice(), o2.getRight().getPrice())
+               )
+               .orElse(null);
     }
 
     private String keyToHex(Key key) {

@@ -1,6 +1,7 @@
 package edu.utfpr.guilhermej.sisdist.av1.model;
 
 import edu.utfpr.guilhermej.sisdist.av1.network.ISocketConnection;
+import edu.utfpr.guilhermej.sisdist.av1.util.Pair;
 
 import java.security.Key;
 import java.util.List;
@@ -10,13 +11,13 @@ class ConnectionContext {
     private ISocketConnection connection;
     private UUID senderUuid;
     private Key encryptionKey;
-    private List<SaleItem> itemList;
+    private List<Pair<PeerOpponent, SaleItem>> peerItemPairList;
 
     ConnectionContext(ISocketConnection connection, UUID senderUuid, Key encryptionKey) {
         this.connection = connection;
         this.senderUuid = senderUuid;
         this.encryptionKey = encryptionKey;
-        itemList = null;
+        peerItemPairList = null;
     }
 
     public ISocketConnection getConnection() {
@@ -46,12 +47,12 @@ class ConnectionContext {
         return this;
     }
 
-    public List<SaleItem> getItemList() {
-        return itemList;
+    public List<Pair<PeerOpponent, SaleItem>> getPeerItemPairList() {
+        return peerItemPairList;
     }
 
-    public ConnectionContext setItemList(List<SaleItem> itemList) {
-        this.itemList = itemList;
+    public ConnectionContext setPeerItemPairList(List<Pair<PeerOpponent, SaleItem>> peerItemPairList) {
+        this.peerItemPairList = peerItemPairList;
         return this;
     }
 }
