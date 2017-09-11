@@ -55,6 +55,7 @@ public class Peer {
     private boolean indexing = false;
 
     private final Object indexerUpLock;
+    private final Object moneyLock;
 
     public Peer(){
         peerMap = new HashMap<>();
@@ -65,6 +66,7 @@ public class Peer {
         moneyEventListener = new ArrayList<>();
 
         indexerUpLock = new Object();
+        moneyLock = new Object();
 
         uuid = UUID.randomUUID();
         keyPair = buildKeyPair(ASSYMETRIC_KEY_LENGTH, ASSYMETRIC_ALGORITHM);
@@ -408,6 +410,32 @@ public class Peer {
         sendPublicKey.start();
     }
 
+    private void sendRemoveSaleItem(SaleItem item, PeerOpponent peer){
+        Thread sendSaleItemList = new Thread(()-> {
+            TcpSynchroClient connection = null;
+            for(int i = 0; i < RECONNECTION_TRIES; i++) {
+                try {
+                    connection = new TcpSynchroClient(peer.getIpAddress(), peer.getPortTcp());
+                    connection.setTimeout(TCP_TIMEOUT);
+                    tcpIntroduceMessage(connection, null);
+                    tcpRemoveMessage(connection, null, item);
+                    tcpFinishMessage(connection, null);
+                    String response = connection.getMessage();
+                    if(processTcpMessage(response, new ConnectionContext(connection, peer.getUuid(), null)))
+                        break;
+                } catch (IOException e) {
+                    System.out.println("Peer IO: " + e.getMessage());
+                } finally {
+                    if (connection != null)
+                        connection.disconnect();
+                    delay();
+                }
+            }
+        });
+        sendSaleItemList.setName("TCP Client Send \"Remove\" Sale Item");
+        sendSaleItemList.start();
+    }
+
     private void sendSearchItemByDescription(String description, PeerOpponent peer){
         Thread sendSearchItemByDescriptionThread = new Thread(()-> {
             TcpSynchroClient connection = null;
@@ -435,7 +463,7 @@ public class Peer {
     }
 
     private void processMulticastMessage(String message, InetAddress address){
-        onMessageEvent("Multicast: " + message);
+        onMessageEventAsync(String.format("Multicast [%05d]: %s", multicastPeer.getId(), message));
         String msgTokens[] = message.split("/");
         UUID senderUuid = UUID.fromString(msgTokens[1]);
         if(uuid.equals(senderUuid)) return;
@@ -462,7 +490,10 @@ public class Peer {
                         .setIpAddress(address)
                         .setPortTcp(Integer.parseInt(msgTokens[2]));
                 synchronized (peerMap) {
-                    peerMap.values().forEach(PeerOpponent::clearItems);
+                    peerMap.forEach((key, value) -> {
+                        if (!key.equals(uuid))
+                            value.clearItems();
+                    });
                     if(!peerMap.containsKey(senderUuid))
                         peerMap.put(senderUuid, newPeer);
                 }
@@ -519,7 +550,7 @@ public class Peer {
 
     private boolean processTcpMessage(String message, ConnectionContext context)
             throws IOException {
-        onMessageEvent("TCP: " + message);
+        onMessageEvent(String.format("Unicast   [%05d]: %s", context.getConnection().getId(), message));
         String[] msgTokens = message.split("/");
         String messageType = msgTokens[0];
         switch (messageType){
@@ -560,8 +591,16 @@ public class Peer {
                                     Float.valueOf(item.getPrice()).equals(wanted.getPrice()))
                             .findFirst();
                     if(optional.isPresent()) {
-                        optional.ifPresent(saleItemList::remove);
-                        setMoney(money + wanted.getPrice());
+                        SaleItem item = optional.get();
+                        synchronized (moneyLock) {
+                            if(saleItemList.remove(item)) {
+                                setMoney(money + wanted.getPrice());
+                                if(!indexing)
+                                    sendRemoveSaleItem(item, lastActiveIndexer);
+                            }
+                            else
+                                tcpErrorMessage(context.getConnection(), context.getEncryptionKey(), "Transaction refused", 60);
+                        }
                     }
                     else
                         tcpErrorMessage(context.getConnection(), context.getEncryptionKey(), "Transaction refused", 60);
@@ -656,6 +695,32 @@ public class Peer {
                 break;
             case "OK":
                 return true;
+            case "REMOVE":
+                if(context.getSenderUuid() != null){
+                    if (!indexing) {
+                        tcpErrorMessage(context.getConnection(), context.getEncryptionKey(),
+                                "Process is not indexer",
+                                10);
+                    }
+                    SaleItem item = new SaleItem()
+                            .setDescription(msgTokens[1])
+                            .setPrice(Float.parseFloat(msgTokens[2]));
+                    boolean failed = true;
+                    synchronized (peerMap){
+                        if (peerMap.containsKey(context.getSenderUuid())) {
+                            peerMap.get(context.getSenderUuid()).removeItem(item);
+                            failed = false;
+                        }
+                    }
+                    if(failed)
+                        tcpErrorMessage(context.getConnection(), context.getEncryptionKey(),
+                                "Process don't know requester",
+                                20);
+                }
+                else
+                    tcpErrorMessage(context.getConnection(),null,
+                            "Process have not announced itself", 30);
+                break;
             case "SEARCH":
                 if(context.getSenderUuid() != null) {
                     if (!indexing) {
@@ -782,6 +847,17 @@ public class Peer {
                               Key key)
             throws IOException {
         String message = String.format("OK");
+        if(key != null)
+            tcpEncryptedMessage(connection, key, message);
+        else
+            connection.sendMessage(message);
+    }
+
+    private void tcpRemoveMessage(ISocketConnection connection,
+                               Key key,
+                               SaleItem item)
+            throws IOException {
+        String message = String.format("REMOVE/%s/%.2f", item.getDescription(), item.getPrice());
         if(key != null)
             tcpEncryptedMessage(connection, key, message);
         else

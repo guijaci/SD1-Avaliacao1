@@ -55,4 +55,8 @@ class ConnectionContext {
         this.peerItemPairList = peerItemPairList;
         return this;
     }
+
+    public int getConnectId(){
+        return connection != null ? connection.getId() : -1;
+    }
 }

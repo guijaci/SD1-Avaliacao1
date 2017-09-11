@@ -128,7 +128,7 @@ public class PeerWindowController {
             }
             return change;
         };
-        newSaleItemDialogPriceField.setTextFormatter(new TextFormatter<>(stringConverter, 1.0F, filter));
+        newSaleItemDialogPriceField.setTextFormatter(new TextFormatter<>(stringConverter, 9.99F, filter));
 
         newSaleItemDialogGrid.add(new Label("Description:"), 0, 0);
         newSaleItemDialogGrid.add(newSaleItemDialogDescriptionField, 1, 0);

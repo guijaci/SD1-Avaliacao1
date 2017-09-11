@@ -16,7 +16,7 @@ public class MulticastPeer {
 
     private final BlockingQueue<String> sendMessageQueue;
     private final BlockingQueue<NetAddressedMessage> receiveMessageQueue;
-    private MulticastSocket s = null;
+    private MulticastSocket multicastSocket = null;
     private InetAddress group = null;
     private List<INetMessageEventListener> messageListeners = new ArrayList<>();
 
@@ -34,10 +34,10 @@ public class MulticastPeer {
             initPropagateMessageThread();
         }catch (SocketException e){
             System.out.println("Socket: " + e.getMessage());
-            if(s != null) s.close();
+            if(multicastSocket != null) multicastSocket.close();
         }catch (IOException e){
             System.out.println("IO: " + e.getMessage());
-            if(s != null) s.close();
+            if(multicastSocket != null) multicastSocket.close();
         }
     }
 
@@ -69,41 +69,41 @@ public class MulticastPeer {
 
     private void initMulticastSocket(String ip) throws IOException{
         group = InetAddress.getByName(ip);
-        s = new MulticastSocket(PORT);
-        s.setSoTimeout(TIMEOUT);
-        s.joinGroup(group);
+        multicastSocket = new MulticastSocket(PORT);
+        multicastSocket.setSoTimeout(TIMEOUT);
+        multicastSocket.joinGroup(group);
     }
 
     private void initReceiveMessageThread() {
         Thread receiveMessageThread = new Thread(() -> {
             byte[] buffer = new byte[BUFFER_SIZE];
-            String msg;
+            String message;
             try {
                 DatagramPacket messageIn = new DatagramPacket(buffer, buffer.length);
                 while (executionEnable) {
                     try {
-                        s.receive(messageIn);
+                        multicastSocket.receive(messageIn);
                     } catch (SocketTimeoutException e) {
                         Thread.yield();
                         continue;
                     }
-                    msg = new String(messageIn.getData()).trim();
-                    System.out.println("Multicast: " + msg);
+                    message = new String(messageIn.getData()).trim();
+                    System.out.println(String.format("Multicast [%05d]: %s", getId(), message));
                     receiveMessageQueue.add(new NetAddressedMessage()
-                            .setMessage(msg)
+                            .setMessage(message)
                             .setSenderAddress(messageIn.getAddress()));
-                    for (int i = 0; i < msg.length(); i++)
+                    for (int i = 0; i < message.length(); i++)
                         buffer[i] = 0;
                     messageIn = new DatagramPacket(buffer, buffer.length);
                     Thread.yield();
                 }
-                s.leaveGroup(group);
+                multicastSocket.leaveGroup(group);
             } catch (SocketException e) {
                 if (executionEnable) System.out.println("Socket: " + e.getMessage());
             } catch (IOException e) {
                 System.out.println("IO: " + e.getMessage());
             } finally {
-                if (s != null) s.close();
+                if (multicastSocket != null) multicastSocket.close();
             }
         });
         receiveMessageThread.setName("Receive Message Thread");
@@ -120,17 +120,17 @@ public class MulticastPeer {
                         msg = sendMessageQueue.take();
                         m = msg.getBytes();
                         DatagramPacket messageOut = new DatagramPacket(m, m.length, group, PORT);
-                        s.send(messageOut);
+                        multicastSocket.send(messageOut);
                     }
                     Thread.yield();
                 }
-                s.leaveGroup(group);
+                multicastSocket.leaveGroup(group);
             } catch (IOException e) {
                 if (executionEnable) System.out.println("IO: " + e.getMessage());
             } catch (InterruptedException e) {
                 System.out.println("Interrupted: " + e.getMessage());
             } finally {
-                if (s != null) s.close();
+                if (multicastSocket != null) multicastSocket.close();
             }
         });
         sendMessageThread.setName("Send Message Thread");
@@ -161,6 +161,10 @@ public class MulticastPeer {
 
     private void netMessageReceivedEvent(String message, InetAddress address){
         messageListeners.forEach(listener->listener.onNetMessageReceived(message, address));
+    }
+
+    public int getId() {
+        return multicastSocket.getLocalPort();
     }
 
     private class NetAddressedMessage{

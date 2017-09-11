@@ -23,10 +23,13 @@ public class SaleItem implements Comparable<SaleItem> {
     }
     @Override
     public boolean equals(Object obj) {
+        if(obj == null)
+            return false;
         if(!SaleItem.class.isInstance(obj))
             return false;
         SaleItem item = SaleItem.class.cast(obj);
-        return getDescription().equals(description);
+        return getDescription().equals(item.getDescription()) &&
+                Float.valueOf(getPrice()).equals(item.getPrice());
     }
 
     @Override

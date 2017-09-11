@@ -12,5 +12,7 @@ public interface ISocketConnection {
 
     boolean isConnected();
 
+    int getId();
+
     void disconnect();
 }

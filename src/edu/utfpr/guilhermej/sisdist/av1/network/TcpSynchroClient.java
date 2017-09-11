@@ -35,13 +35,18 @@ public class TcpSynchroClient implements ISocketConnection {
         if(!isConnected())
             throw new IOException("TCP Connection closed.");
         String message = in.readUTF();
-        System.out.println(String.format("TCP Server: %s", message));
+        System.out.println(String.format("Unicast   [%05d]: %s", getId(), message));
         return message;
     }
 
     @Override
     public boolean isConnected(){
         return clientSide.isConnected() && !clientSide.isClosed() && clientSide.isConnected() && clientSide.isBound();
+    }
+
+    @Override
+    public int getId() {
+        return clientSide.getLocalPort();
     }
 
     @Override
