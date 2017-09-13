@@ -8,6 +8,8 @@ import javafx.geometry.Insets;
 import javafx.scene.Node;
 import javafx.scene.control.*;
 import javafx.scene.layout.GridPane;
+import javafx.scene.paint.Color;
+import javafx.scene.shape.Circle;
 import javafx.stage.WindowEvent;
 import javafx.util.Pair;
 import javafx.util.StringConverter;
@@ -17,10 +19,11 @@ import java.util.function.UnaryOperator;
 
 public class PeerWindowController {
     public Button newSaleItemButton;
-    public GridPane gridPane;
     public TextArea textAreaOutput;
     public Button searchItemButton;
     public Label moneyLabel;
+    public Circle conectionBulb;
+    public Label conectionLabel;
 
     private Dialog<Pair<String, Float>> newSaleItemDialog = null;
     private TextInputDialog searchItemDialog = null;
@@ -63,7 +66,14 @@ public class PeerWindowController {
         this.peer = peer;
         moneyLabel.setText(getMoneyText(peer.getMoney()));
         peer.addIndexerConnectionEventListener(connected -> Platform.runLater(()->{
-                searchItemButton.setDisable(!connected);
+            searchItemButton.setDisable(!connected);
+            conectionLabel.setText(connected?
+                    "Connected":
+                    "Disconnected");
+            conectionBulb.setFill(connected?
+                    Color.GREENYELLOW:
+                    Color.ORANGERED);
+
         }));
         peer.addMoneyListener(value -> Platform.runLater(() -> {
                 moneyLabel.setText(getMoneyText(value));
@@ -75,7 +85,7 @@ public class PeerWindowController {
     }
 
     private String getMoneyText(float value) {
-        return String.format("Money: $%.02f", value);
+        return String.format("%.02f", value);
     }
 
     private Dialog<Pair<String, Float>> buildNewSaleItemDialog() {

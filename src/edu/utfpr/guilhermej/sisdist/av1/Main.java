@@ -20,7 +20,7 @@ public class Main extends Application {
         Locale.setDefault(new Locale("en", "US"));
 
         //Carregando View
-        FXMLLoader loader = new FXMLLoader(getClass().getResource("view/peerWindow.fxml"));
+        FXMLLoader loader = new FXMLLoader(getClass().getResource("../../../../../res/layout/peerWindow.fxml"));
         Parent root = loader.load();
 
         //Inicializando modelo e injetando no controlador
@@ -31,7 +31,7 @@ public class Main extends Application {
         //Configurando janela da view
 //        primaryStage.setResizable(false);
         primaryStage.setTitle("SD1-"+peer.toString());
-        primaryStage.setScene(new Scene(root, 800, 450));
+        primaryStage.setScene(new Scene(root, 600, 400));
         primaryStage.setOnCloseRequest(new EventHandler<WindowEvent>() {
             @Override
             public void handle(WindowEvent event) {

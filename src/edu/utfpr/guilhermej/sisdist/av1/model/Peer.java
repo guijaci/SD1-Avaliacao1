@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
 
 public class Peer {
     public static final int TCP_TIMEOUT = 5000;
-    public static final int MIN_INDEXER_PEERS = 1;
+    public static final int MIN_INDEXER_PEERS = 3;
     public static final int RECONNECTION_TRIES = 3;
     //Constantes para criptografia
     private static final int ASSYMETRIC_KEY_LENGTH = 1024;
