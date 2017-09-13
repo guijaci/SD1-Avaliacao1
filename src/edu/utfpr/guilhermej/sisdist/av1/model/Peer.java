@@ -1,9 +1,8 @@
 package edu.utfpr.guilhermej.sisdist.av1.model;
 
-import edu.utfpr.guilhermej.sisdist.av1.listener.IFloatEventListener;
-import edu.utfpr.guilhermej.sisdist.av1.listener.IMessageEventListener;
-import edu.utfpr.guilhermej.sisdist.av1.listener.INetMessageEventListener;
-import edu.utfpr.guilhermej.sisdist.av1.listener.ITriggerEventListener;
+import edu.utfpr.guilhermej.sisdist.av1.event.ItemListEvent;
+import edu.utfpr.guilhermej.sisdist.av1.event.ItemProposalEvent;
+import edu.utfpr.guilhermej.sisdist.av1.listener.*;
 import edu.utfpr.guilhermej.sisdist.av1.network.*;
 import edu.utfpr.guilhermej.sisdist.av1.util.Pair;
 
@@ -24,10 +23,8 @@ public class Peer {
     public static final int MIN_INDEXER_PEERS = 3;
     public static final int RECONNECTION_TRIES = 3;
     //Constantes para criptografia
-    private static final int ASSYMETRIC_KEY_LENGTH = 1024;
-    private static final String ASSYMETRIC_ALGORITHM = "RSA";
-    private static final int SYMETRIC_KEY_LENGTH =  256;
-    private static final String SYMETRIC_ALGORITHM = "AES";
+    private static final int KEY_LENGTH = 1024;
+    private static final String CRYPTO_ALGORITHM = "RSA";
     //IP multicast
     private static final String MULTICAST_IP_ADD = "233.32.31.30";
     //Intervalo de tempo em que um indexador envia mensagens
@@ -46,6 +43,8 @@ public class Peer {
     private final List<IMessageEventListener> messageEventListeners;
     private final List<ITriggerEventListener> indexerConnectionEventListeners;
     private final List<IFloatEventListener> moneyEventListener;
+    private final List<IItemProposalEventListener> itemProposalEventListeners;
+    private final List<IItemListEventListener> itemListEventListeners;
 
     private float money = INITIAL_MONEY;
     private int tcpPort;
@@ -64,12 +63,14 @@ public class Peer {
         messageEventListeners = new ArrayList<>();
         indexerConnectionEventListeners = new ArrayList<>();
         moneyEventListener = new ArrayList<>();
+        itemProposalEventListeners = new ArrayList<>();
+        itemListEventListeners = new ArrayList<>();
 
         indexerUpLock = new Object();
         moneyLock = new Object();
 
         uuid = UUID.randomUUID();
-        keyPair = buildKeyPair(ASSYMETRIC_KEY_LENGTH, ASSYMETRIC_ALGORITHM);
+        keyPair = buildKeyPair(KEY_LENGTH, CRYPTO_ALGORITHM);
         multicastPeer = new MulticastPeer(MULTICAST_IP_ADD);
         multicastPeer.addMessageListener(this::processMulticastMessage);
 
@@ -88,7 +89,7 @@ public class Peer {
                 .setKey(keyPair.getPublic()));
 
         executionEnable = true;
-        initIndexerControllThread();
+        initIndexerControlThread();
     }
 
     public void sendMulticastMessage(String message) {
@@ -112,6 +113,7 @@ public class Peer {
     public void addSaleItem(SaleItem item){
         synchronized (saleItemList) {
             saleItemList.add(item);
+            onItemListEventAsync(new ItemListEvent(item, ItemListEvent.ItemListEventType.ADDED));
         }
         if(!indexing) {
             if (indexerUp)
@@ -133,9 +135,9 @@ public class Peer {
         else{
             Pair<PeerOpponent, SaleItem> pair = getPairPeerItemByPriceAndReputation(getPeerBySaleItemDescription(uuid, description));
             if(pair != null)
-                sendBuyItem(pair.getRight(), pair.getLeft());
-            //TODO: caso nao encontre nenhum item
-            //else ...
+                onItemProposalEventAsync(ItemProposalEvent.itemFound(pair.getRight(), pair.getLeft(), this::sendBuyItem));
+            else
+                onItemProposalEventAsync(ItemProposalEvent.itemNotFound(new SaleItem().setDescription(description)));
         }
 
     }
@@ -171,6 +173,22 @@ public class Peer {
         moneyEventListener.remove(listener);
     }
 
+    public void addItemProposalEventListener(IItemProposalEventListener listener){
+        itemProposalEventListeners.add(listener);
+    }
+
+    public void removeItemProposalEventListener(IItemProposalEventListener listener){
+        itemProposalEventListeners.remove(listener);
+    }
+
+    public void addItemListEventListener(IItemListEventListener listener){
+        itemListEventListeners.add(listener);
+    }
+
+    public void removeItemListEventListener(IItemListEventListener listener){
+        itemListEventListeners.remove(listener);
+    }
+
     @Override
     public String toString() {
         return String.format("Peer ID: [%s]- TCP Port: [%d]",uuid.toString(),tcpPort);
@@ -188,7 +206,7 @@ public class Peer {
         return null;
     }
 
-    private void initIndexerControllThread(){
+    private void initIndexerControlThread(){
         Thread peerThread = new Thread(() -> {
             multicastGreetingMessage();
             delay();
@@ -233,7 +251,7 @@ public class Peer {
                 delay();
             }
         });
-        peerThread.setName("Indexer Controll Thread");
+        peerThread.setName("Indexer Control Thread");
         peerThread.start();
     }
 
@@ -274,6 +292,26 @@ public class Peer {
         Thread onMoneyEventThread = new Thread(() -> onMoneyEvent(value));
         onMoneyEventThread.setName("Money Event Thread");
         onMoneyEventThread.start();
+    }
+
+    private void onItemProposalEvent(ItemProposalEvent event){
+        itemProposalEventListeners.forEach(listener->listener.onItemProposalEventListener(event));
+    }
+
+    private void onItemProposalEventAsync(ItemProposalEvent event){
+        Thread onItemFoundEventThread = new Thread(()-> onItemProposalEvent(event));
+        onItemFoundEventThread.setName("Item Found Event Thread");
+        onItemFoundEventThread.start();
+    }
+
+    private void onItemListEvent(ItemListEvent event){
+        itemListEventListeners.forEach(listener->listener.onItemListEvent(event));
+    }
+
+    private void onItemListEventAsync(ItemListEvent event){
+        Thread onItemListEventThread = new Thread(()->onItemListEvent(event));
+        onItemListEventThread.setName("Item List Event Thread");
+        onItemListEventThread.start();
     }
 
     private void onIndexerConnectionEvent(boolean connected){
@@ -368,6 +406,7 @@ public class Peer {
                 String response = connection.getMessage();
                 if(processTcpMessage(response, new ConnectionContext(connection, peer.getUuid(), null))) {
                     setMoney(money -= item.getPrice());
+                    onItemProposalEventAsync(ItemProposalEvent.itemBought(item, peer));
                     peer.setReputation(peer.getReputation()+1);
                 }
             } catch (IOException e) {
@@ -597,18 +636,22 @@ public class Peer {
                                 setMoney(money + wanted.getPrice());
                                 if(!indexing)
                                     sendRemoveSaleItem(item, lastActiveIndexer);
+                                else
+                                    peerMap.get(uuid).removeItem(item);
+                                onItemProposalEventAsync(ItemProposalEvent.itemSold(item, peerMap.get(context.getSenderUuid())));
+                                onItemListEventAsync(new ItemListEvent(item, ItemListEvent.ItemListEventType.REMOVED));
                             }
                             else
-                                tcpErrorMessage(context.getConnection(), context.getEncryptionKey(), "Transaction refused", 60);
+                                tcpErrorMessage(context.getConnection(), context.getEncryptionKey(), "Transaction refused: internal problem", 60);
                         }
                     }
                     else
-                        tcpErrorMessage(context.getConnection(), context.getEncryptionKey(), "Transaction refused", 60);
+                        tcpErrorMessage(context.getConnection(), context.getEncryptionKey(), "Transaction refused: item not found", 60);
                 }
                 break;
             case "ENCRYPTED":
                 try {
-                    Cipher cipher = Cipher.getInstance(ASSYMETRIC_ALGORITHM);
+                    Cipher cipher = Cipher.getInstance(CRYPTO_ALGORITHM);
                     cipher.init(Cipher.DECRYPT_MODE, keyPair.getPrivate());
                     String decrypted = new String(cipher.doFinal(DatatypeConverter.parseHexBinary(msgTokens[1])), StandardCharsets.UTF_8);
                     processTcpMessage(decrypted, new ConnectionContext(context.getConnection(), context.getSenderUuid(), context.getEncryptionKey()));
@@ -654,12 +697,10 @@ public class Peer {
                     else if(context.getPeerItemPairList() != null && !context.getPeerItemPairList().isEmpty()){
                         Pair<PeerOpponent, SaleItem> pair = getPairPeerItemByPriceAndReputation(context.getPeerItemPairList());
                         if(pair != null)
-                            sendBuyItem(pair.getRight(), pair.getLeft());
-                        //else
+                            onItemProposalEventAsync(ItemProposalEvent.itemFound(pair.getRight(),pair.getLeft(), this::sendBuyItem));
                     }
-                    //TODO: quando nenhum item foi encontrado
-                    //else
-                        //item not found
+                    else
+                        onItemProposalEventAsync(ItemProposalEvent.itemNotFound());
                 }
                 else
                     tcpErrorMessage(context.getConnection(),null, "Client have not requested search", 40);
@@ -777,7 +818,7 @@ public class Peer {
             throws IOException{
         if(key != null) {
             try {
-                Cipher cipher = Cipher.getInstance(ASSYMETRIC_ALGORITHM);
+                Cipher cipher = Cipher.getInstance(CRYPTO_ALGORITHM);
                 cipher.init(Cipher.ENCRYPT_MODE, key);
                 String encrypted = DatatypeConverter.printHexBinary(cipher.doFinal(message.getBytes(StandardCharsets.UTF_8)));
                 connection.sendMessage(String.format("ENCRYPTED/%s",encrypted));
@@ -910,12 +951,12 @@ public class Peer {
 
     private Key hexToKey(String hex){
         try {
-            return KeyFactory.getInstance(ASSYMETRIC_ALGORITHM)
+            return KeyFactory.getInstance(CRYPTO_ALGORITHM)
                     .generatePublic(new X509EncodedKeySpec(DatatypeConverter.parseHexBinary(hex)));
         } catch (InvalidKeySpecException e) {
             throw new RuntimeException(String.format("Expected valid string of printed bytes for key generation (found: %s)",hex), e);
         } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("Expected "+ASSYMETRIC_ALGORITHM+" algorithm for encryption", e);
+            throw new RuntimeException("Expected "+ CRYPTO_ALGORITHM +" algorithm for encryption", e);
         }
     }
 

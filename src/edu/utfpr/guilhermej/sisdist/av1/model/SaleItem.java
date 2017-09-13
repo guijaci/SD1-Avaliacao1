@@ -36,4 +36,9 @@ public class SaleItem implements Comparable<SaleItem> {
     public int compareTo(SaleItem o) {
         return getDescription().compareTo(o.getDescription());
     }
+
+    @Override
+    public String toString() {
+        return String.format("%s / $%3.02f", getDescription(), getPrice());
+    }
 }

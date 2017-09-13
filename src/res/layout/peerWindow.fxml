@@ -27,7 +27,7 @@
         <tabs>
           <Tab text="Items for Sale">
                <content>
-                  <ListView />
+                  <ListView fx:id="saleItemsListView" />
                </content>
             </Tab>
           <Tab text="Message Log">

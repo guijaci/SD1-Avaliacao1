@@ -1,8 +1,11 @@
 package edu.utfpr.guilhermej.sisdist.av1.controller;
 
 import edu.utfpr.guilhermej.sisdist.av1.model.Peer;
+import edu.utfpr.guilhermej.sisdist.av1.model.PeerOpponent;
 import edu.utfpr.guilhermej.sisdist.av1.model.SaleItem;
 import javafx.application.Platform;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
 import javafx.event.ActionEvent;
 import javafx.geometry.Insets;
 import javafx.scene.Node;
@@ -14,6 +17,7 @@ import javafx.stage.WindowEvent;
 import javafx.util.Pair;
 import javafx.util.StringConverter;
 
+import java.util.Observable;
 import java.util.Optional;
 import java.util.function.UnaryOperator;
 
@@ -24,9 +28,16 @@ public class PeerWindowController {
     public Label moneyLabel;
     public Circle conectionBulb;
     public Label conectionLabel;
+    public ListView saleItemsListView;
+
+    private ObservableList<SaleItem> saleItemsList;
 
     private Dialog<Pair<String, Float>> newSaleItemDialog = null;
     private TextInputDialog searchItemDialog = null;
+    private Alert itemFoundAlert = null;
+    private Alert itemNotFoundAlert = null;
+    private Alert itemBoughtAlert = null;
+    private Alert itemSoldAlert = null;
 
     private final Object messageLock;
 
@@ -39,6 +50,13 @@ public class PeerWindowController {
     public void initialize(){
         newSaleItemDialog = buildNewSaleItemDialog();
         searchItemDialog = buildSearchItemDialog();
+        itemFoundAlert = buildItemFoundAlert();
+        itemNotFoundAlert = buildItemNotFoundAlert();
+        itemBoughtAlert = buildItemBoughtOrSoldAlert();
+        itemSoldAlert = buildItemBoughtOrSoldAlert();
+
+        saleItemsList = FXCollections.observableArrayList();
+        saleItemsListView.setItems(saleItemsList);
     }
 
     public void onCreateSaleItem(ActionEvent actionEvent) {
@@ -82,6 +100,38 @@ public class PeerWindowController {
             synchronized(messageLock) {
                 textAreaOutput.appendText(message.concat("\n"));
             }}));
+        peer.addItemProposalEventListener(event->Platform.runLater(()->{
+            switch (event.getProposalStage()) {
+                case FOUND:
+                    Optional<ButtonType> result = showItemFoundAlertAndWait(itemFoundAlert, event.getItem(), event.getSeller());
+                    if (result.isPresent() && result.get() == ButtonType.OK)
+                        event.accept();
+                    else
+                        event.reject();
+                break;
+                case NOT_FOUND:
+                    showItemNotFoundAlertAndWait(itemNotFoundAlert, event.getItem());
+                    break;
+                case ITEM_BOUGHT:
+                    showItemBoughtAlertAndWait(itemBoughtAlert, event.getItem());
+                    break;
+                case ITEM_SOLD:
+                    showItemSoldAlertAndWait(itemSoldAlert, event.getItem());
+                    break;
+            }
+        }));
+        peer.addItemListEventListener(event->Platform.runLater(()->{
+            switch (event.getType()){
+                case ADDED:
+                    saleItemsList.add(event.getItem());
+                    break;
+                case REMOVED:
+                    saleItemsList.remove(event.getItem());
+                    break;
+                case MODIFIED:
+                    break;
+            }
+        }));
     }
 
     private String getMoneyText(float value) {
@@ -191,4 +241,50 @@ public class PeerWindowController {
         return searchItemDialog;
     }
 
+    private Alert buildItemFoundAlert(){
+        Alert itemProposalAlert = new Alert(Alert.AlertType.CONFIRMATION);
+        itemProposalAlert.setTitle("Item Found");
+        itemProposalAlert.setContentText("Confirm purchase?");
+        return itemProposalAlert;
+    }
+
+    private Alert buildItemNotFoundAlert(){
+        Alert itemNotFoundAlert = new Alert(Alert.AlertType.INFORMATION);
+        itemNotFoundAlert.setTitle("Item not Found");
+        itemNotFoundAlert.setHeaderText(null);
+        return itemNotFoundAlert;
+    }
+
+    private Alert buildItemBoughtOrSoldAlert(){
+        Alert itemBoughtorSoldAlert = new Alert((Alert.AlertType.INFORMATION));
+        itemBoughtorSoldAlert.setTitle("Transaction Successful");
+        itemNotFoundAlert.setHeaderText(null);
+        return  itemBoughtorSoldAlert;
+    }
+
+    private Optional<ButtonType> showItemFoundAlertAndWait(Alert itemProposalAlert, SaleItem item, PeerOpponent seller){
+        itemProposalAlert.setHeaderText(String.format("Found item \"%s\" for $%01.02f with %s:%s.",
+                item.getDescription(), item.getPrice(), seller.getIpAddress(), seller.getPortTcp()));
+        return itemProposalAlert.showAndWait();
+    }
+
+    private Optional<ButtonType> showItemNotFoundAlertAndWait(Alert itemNotFound, SaleItem item){
+        if(item != null)
+            itemNotFound.setContentText(String.format("Item \"%s\" not found.", item.getDescription()));
+        else
+            itemNotFound.setContentText("Item not found");
+        return itemNotFound.showAndWait();
+    }
+
+    private Optional<ButtonType> showItemBoughtAlertAndWait(Alert itemNotFound, SaleItem item){
+        itemNotFound.setContentText(String.format("You have successfully bought \"%s\" for $%01.02f!",
+                item.getDescription(), item.getPrice()));
+        return itemNotFound.showAndWait();
+    }
+
+    private Optional<ButtonType> showItemSoldAlertAndWait(Alert itemNotFound, SaleItem item){
+        itemNotFound.setContentText(String.format("You have just sold \"%s\" for $%01.02f!",
+                item.getDescription(), item.getPrice()));
+        return itemNotFound.showAndWait();
+    }
 }
