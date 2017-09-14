@@ -1,5 +1,10 @@
 package edu.utfpr.guilhermej.sisdist.av1.util;
 
+/**
+ * Associa dois
+ * @param <L> Classe do primeiro objeto
+ * @param <R> Classe do segundo objeto
+ */
 public class Pair <L, R> {
     private L left;
     private R right;

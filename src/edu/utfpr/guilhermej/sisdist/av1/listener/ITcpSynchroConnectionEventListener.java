@@ -1,7 +1,7 @@
 package edu.utfpr.guilhermej.sisdist.av1.listener;
 
-import edu.utfpr.guilhermej.sisdist.av1.network.TcpSynchroServerSideClient;
+import edu.utfpr.guilhermej.sisdist.av1.network.IUnicastSocketConnection;
 
 public interface ITcpSynchroConnectionEventListener {
-    void onTcpSecureConectionEventListener(TcpSynchroServerSideClient connection);
+    void onTcpSecureConectionEventListener(IUnicastSocketConnection connection);
 }

@@ -21,6 +21,9 @@ import java.util.Observable;
 import java.util.Optional;
 import java.util.function.UnaryOperator;
 
+/**
+ * Classe controladora de interface gráfica
+ */
 public class PeerWindowController {
     public Button newSaleItemButton;
     public TextArea textAreaOutput;

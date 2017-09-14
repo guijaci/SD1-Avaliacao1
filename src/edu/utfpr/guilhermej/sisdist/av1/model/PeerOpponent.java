@@ -6,11 +6,19 @@ import java.util.*;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
+/**
+ * Classe representa pares satelites à {@link Peer}
+ */
 public class PeerOpponent implements Comparable<PeerOpponent>{
+    /** ID do par */
     private UUID uuid;
+    /** Endereço IP do par */
     private InetAddress ipAddress;
+    /** Chave pública do par */
     private Key key;
+    /** Porta TCP do servidor unicast do par */
     private int portTcp;
+    /** Reputação do par */
     private int reputation;
 
     private List<SaleItem> saleItemList;
@@ -102,6 +110,7 @@ public class PeerOpponent implements Comparable<PeerOpponent>{
         saleItemList.forEach(action);
         return this;
     }
+
     @Override
     public int compareTo(PeerOpponent o) {
         return uuid.compareTo(o.uuid);

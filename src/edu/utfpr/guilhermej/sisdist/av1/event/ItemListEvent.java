@@ -2,6 +2,9 @@ package edu.utfpr.guilhermej.sisdist.av1.event;
 
 import edu.utfpr.guilhermej.sisdist.av1.model.SaleItem;
 
+/**
+ * Evento de item em lista, que pode ser adicionado, removido ou modificado
+ */
 public class ItemListEvent {
     private final SaleItem item;
     private final ItemListEventType type;

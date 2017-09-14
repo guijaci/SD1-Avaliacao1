@@ -5,6 +5,9 @@ import edu.utfpr.guilhermej.sisdist.av1.model.SaleItem;
 
 import java.util.function.BiConsumer;
 
+/**
+ * Evento de proposta de item, que pode ser item encontrado, item não encontrado, item vendido e item comprado
+ */
 public class ItemProposalEvent {
     private final ProposalStage proposalStage;
     private final SaleItem item;
